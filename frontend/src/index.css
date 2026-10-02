@@ -1,0 +1,74 @@
+@import 'tailwindcss';
+
+/* Apple-inspired dark palette (system colors from Apple's HIG, dark variants). */
+@theme {
+  --font-sans: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Inter', 'Segoe UI', system-ui, sans-serif;
+
+  --color-bg: #000000;
+  --color-surface: #1c1c1e;
+  --color-surface-2: #2c2c2e;
+  --color-surface-3: #3a3a3c;
+  --color-line: rgb(84 84 88 / 0.45);
+  --color-label: #f5f5f7;
+  --color-label-2: rgb(235 235 245 / 0.62);
+  --color-label-3: rgb(235 235 245 / 0.32);
+
+  --color-blue: #0a84ff;
+  --color-green: #30d158;
+  --color-orange: #ff9f0a;
+  --color-red: #ff453a;
+  --color-purple: #bf5af2;
+  --color-teal: #40c8e0;
+  --color-yellow: #ffd60a;
+  --color-pink: #ff375f;
+  --color-indigo: #5e5ce6;
+
+  --radius-xl: 14px;
+  --radius-2xl: 20px;
+}
+
+@layer base {
+  html {
+    color-scheme: dark;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+  body {
+    @apply bg-bg text-label font-sans;
+    font-feature-settings: 'cv11', 'ss01';
+    letter-spacing: -0.011em;
+  }
+  ::selection {
+    background: rgb(10 132 255 / 0.4);
+  }
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--color-surface-3) transparent;
+  }
+  input,
+  select,
+  textarea {
+    @apply outline-none;
+  }
+}
+
+@layer components {
+  .glass {
+    background: rgb(28 28 30 / 0.72);
+    backdrop-filter: saturate(180%) blur(24px);
+    -webkit-backdrop-filter: saturate(180%) blur(24px);
+  }
+  .card {
+    @apply rounded-2xl bg-surface border border-white/[0.06];
+  }
+  .field {
+    @apply w-full rounded-xl bg-surface-2 border border-transparent px-3.5 py-2.5 text-[15px] text-label
+      placeholder:text-label-3 transition focus:border-blue focus:ring-4 focus:ring-blue/20;
+  }
+  .label {
+    @apply mb-1.5 block text-[13px] font-medium text-label-2;
+  }
+  .tnum {
+    font-variant-numeric: tabular-nums;
+  }
+}
