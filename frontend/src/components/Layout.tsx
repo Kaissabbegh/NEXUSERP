@@ -1,7 +1,7 @@
 import { AnimatePresence, motion } from 'framer-motion'
 import {
   ArrowLeftRight, BarChart3, BookA, BookOpen, Boxes, Factory, FileText, Landmark, LayoutGrid, LogOut, Map as MapIcon, Menu,
-  Package, ReceiptText, RefreshCw, Scale, ScrollText, ShoppingBag, ShoppingCart, Users, X,
+  Package, PlayCircle, ReceiptText, RefreshCw, Scale, ScrollText, ShoppingBag, ShoppingCart, Users, X,
 } from 'lucide-react'
 import { Suspense, useEffect, useState } from 'react'
 import { NavLink, Outlet, useLocation } from 'react-router-dom'
@@ -12,6 +12,7 @@ import { Spinner } from './ui'
 const NAV = [
   { section: null, items: [
     { to: '/', label: 'Dashboard', icon: LayoutGrid, color: 'bg-blue' },
+    { to: '/scenarios', label: 'Guided Scenarios', icon: PlayCircle, color: 'bg-pink' },
     { to: '/learn', label: 'ERP Map', icon: MapIcon, color: 'bg-purple' },
     { to: '/glossary', label: 'Glossary', icon: BookA, color: 'bg-indigo' },
   ] },

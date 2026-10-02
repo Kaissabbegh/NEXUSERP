@@ -28,6 +28,8 @@ const Replenishment = lazy(() => import('./pages/Replenishment'))
 const SaleOrderDetail = lazy(() => import('./pages/SaleOrderDetail'))
 const SaleOrderEditor = lazy(() => import('./pages/SaleOrderEditor'))
 const Sales = lazy(() => import('./pages/Sales'))
+const ScenarioPlayer = lazy(() => import('./pages/ScenarioPlayer'))
+const Scenarios = lazy(() => import('./pages/Scenarios'))
 const Stock = lazy(() => import('./pages/Stock'))
 const Transfers = lazy(() => import('./pages/Transfers'))
 
@@ -41,6 +43,8 @@ export default function App() {
       <Route element={<Layout />}>
         <Route index element={<Dashboard />} />
         <Route path="learn" element={<Learn />} />
+        <Route path="scenarios" element={<Scenarios />} />
+        <Route path="scenarios/:key" element={<ScenarioPlayer />} />
         <Route path="contacts" element={<Contacts />} />
         <Route path="products" element={<Products />} />
         <Route path="accounts" element={<Accounts />} />

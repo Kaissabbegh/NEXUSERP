@@ -462,3 +462,36 @@ export interface AgedBalance {
   partners: AgedPartner[]
   totals: Record<AgedBucket | 'total', Dec>
 }
+/* ---------- Guided scenarios ---------- */
+
+export interface ScenarioMeta {
+  key: string
+  title: string
+  subtitle: string
+  lesson: string
+  icon: string
+  color: string
+  steps: { title: string; actor: string }[]
+}
+
+export interface Bucket {
+  code: string
+  label: string
+  group: AccountGroup
+  amount: Dec
+}
+
+export interface ScenarioStepResult {
+  index: number
+  title: string
+  actor: string
+  outcome: 'ok' | 'blocked'
+  explanation: string
+  takeaway: string
+  note: string | null
+  documents: { kind: string; label: string; url: string }[]
+  stock: { sku: string; name: string; before: Dec; after: Dec }[]
+  entries: Move[]
+  balances: Bucket[]
+  finished: boolean
+}

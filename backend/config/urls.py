@@ -10,6 +10,7 @@ from masterdata import views as masterdata
 from mrp import views as mrp
 from purchase import views as purchase
 from sales import views as sales
+from scenarios import views as scenarios
 
 router = DefaultRouter()
 router.register("partners", masterdata.PartnerViewSet, basename="partner")
@@ -43,5 +44,8 @@ urlpatterns = [
     path("api/reports/profit-loss/", accounting.profit_and_loss),
     path("api/reports/balance-sheet/", accounting.balance_sheet),
     path("api/reports/aged/", accounting.aged_balance),
+    path("api/scenarios/", scenarios.scenario_list),
+    path("api/scenarios/<str:key>/start/", scenarios.start),
+    path("api/scenario-runs/<int:run_id>/next/", scenarios.next_step),
     path("api/", include(router.urls)),
 ]

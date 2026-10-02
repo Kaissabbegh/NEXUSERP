@@ -1,5 +1,5 @@
 import { motion } from 'framer-motion'
-import { AlertTriangle, ArrowRight, ChevronRight, FileText, Landmark, PackageCheck, Plus, ReceiptText, ShoppingBag, ShoppingCart, Truck, type LucideIcon } from 'lucide-react'
+import { AlertTriangle, ArrowRight, ChevronRight, FileText, Landmark, PackageCheck, PlayCircle, Plus, ReceiptText, ShoppingBag, ShoppingCart, Truck, type LucideIcon } from 'lucide-react'
 import type { ReactNode } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { Button, Card, ErrorBox, PageHeader, Pill, Spinner } from '../components/ui'
@@ -104,6 +104,15 @@ export default function Dashboard() {
           </>
         }
       />
+
+      <Link to="/scenarios" className="group mb-4 flex items-center gap-4 rounded-2xl border border-pink/25 bg-gradient-to-r from-pink/[0.14] via-purple/[0.10] to-blue/[0.06] p-4 transition hover:border-pink/40">
+        <span className="grid size-11 shrink-0 place-items-center rounded-full bg-pink text-white"><PlayCircle className="size-6" /></span>
+        <span className="min-w-0 flex-1">
+          <span className="block font-semibold">Watch the ERP work: 5 guided scenarios</span>
+          <span className="block text-[13px] text-label-2">Sell, buy, manufacture, chase a late payer, close the month. Each step plays by itself and is explained.</span>
+        </span>
+        <ArrowRight className="size-5 shrink-0 text-label-3 transition group-hover:translate-x-0.5 group-hover:text-label" />
+      </Link>
 
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <Kpi i={0} label="Revenue this month" value={money(k.revenue_month)} hint="Posted invoices, excl. tax" tone="text-label" />

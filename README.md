@@ -11,7 +11,7 @@ six months of sales history.
 
 | Area | Screens | Lesson |
 |---|---|---|
-| Overview | Dashboard (selling + buying pipelines), **ERP Map**, **Glossary** (63 terms) | Step 1 |
+| Overview | Dashboard (selling + buying pipelines), **Guided Scenarios** (5 auto-playing stories), **ERP Map**, **Glossary** (63 terms) | Step 1 |
 | Master data | Contacts, Products (vendor, taxes, margin), Chart of Accounts | Step 2 |
 | Sales | Quotations → Sales Orders with an **Order-to-Cash flow diagram**, credit limits | Step 3 |
 | Purchasing | RFQs → Purchase Orders with a **Procure-to-Pay flow diagram**, three-way match, **Replenishment** | Step 4 |
@@ -37,6 +37,7 @@ backend/
   sales/        quotations / sales orders and the Order-to-Cash services
   purchase/     RFQs / purchase orders, vendor bills, replenishment (Procure-to-Pay)
   mrp/          bills of materials and manufacturing orders
+  scenarios/    guided scenarios: engine.py (runs a step, reports its effects) and library.py (the 5 stories)
   accounts/     auth "me" endpoint and dashboard
 frontend/src/
   pages/        one file per screen
