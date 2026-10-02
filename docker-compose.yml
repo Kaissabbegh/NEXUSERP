@@ -1,0 +1,29 @@
+# Any OS with Docker:  docker compose up --build   then open http://localhost:8000
+# The login is printed in the logs (look for "NexusERP is ready").
+services:
+  db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: nexuserp
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres  # local-only container, not exposed outside Docker
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+  app:
+    build: .
+    depends_on:
+      - db
+    environment:
+      DB_HOST: db
+      DB_NAME: nexuserp
+      DB_USER: postgres
+      DB_PASSWORD: postgres
+    ports:
+      - "8000:8000"
+    volumes:
+      - appenv:/app/backend/env-store
+
+volumes:
+  pgdata:
+  appenv:

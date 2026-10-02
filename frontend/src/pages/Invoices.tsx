@@ -1,7 +1,7 @@
 import { ChevronRight, ReceiptText } from 'lucide-react'
-import { Link } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import { MoveState } from '../components/status'
-import { Empty, ErrorBox, Lesson, PageHeader, Spinner } from '../components/ui'
+import { Empty, ErrorBox, Lesson, PageHeader, Segmented, Spinner } from '../components/ui'
 import { cx, date, money, num } from '../lib/format'
 import { useFetch } from '../lib/hooks'
 import type { Move } from '../lib/types'
@@ -9,7 +9,9 @@ import type { Move } from '../lib/types'
 export default function Invoices({ kind = 'customer' }: { kind?: 'customer' | 'vendor' }) {
   const vendor = kind === 'vendor'
   const base = vendor ? '/bills' : '/invoices'
-  const { data, error, loading } = useFetch<Move[]>(`/moves/?type=${vendor ? 'in_invoice' : 'out_invoice'}`)
+  const [params, setParams] = useSearchParams()
+  const credits = !vendor && params.get('type') === 'credit'
+  const { data, error, loading } = useFetch<Move[]>(`/moves/?type=${vendor ? 'in_invoice' : credits ? 'out_refund' : 'out_invoice'}`)
   const today = new Date().toISOString().slice(0, 10)
 
   return (
@@ -32,6 +34,12 @@ export default function Invoices({ kind = 'customer' }: { kind?: 'customer' | 'v
         </>
       )}
 
+      {!vendor && (
+        <div className="mb-4">
+          <Segmented<'inv' | 'credit'> value={credits ? 'credit' : 'inv'} onChange={(v) => setParams(v === 'credit' ? { type: 'credit' } : {})}
+            options={[{ value: 'inv', label: 'Invoices' }, { value: 'credit', label: 'Credit notes' }]} />
+        </div>
+      )}
       {error && <ErrorBox message={error} />}
       {loading && !data ? (
         <Spinner />

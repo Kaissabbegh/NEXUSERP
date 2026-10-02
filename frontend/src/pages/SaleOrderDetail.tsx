@@ -1,6 +1,7 @@
 import { ArrowLeft, Banknote, FileCheck2, FileText, Pencil, ShoppingBag, Truck, X } from 'lucide-react'
 import { useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
+import { AfterSales } from '../components/AfterSales'
 import { FlowDiagram, NextStep, stepStates, type Step } from '../components/FlowDiagram'
 import { JournalEntry } from '../components/JournalEntry'
 import { OrderState, PickingState } from '../components/status'
@@ -10,7 +11,6 @@ import { del, post } from '../lib/api'
 import { cx, date, money, num, qty } from '../lib/format'
 import { useFetch } from '../lib/hooks'
 import type { Move, SaleFlow } from '../lib/types'
-
 
 function buildSteps(f: SaleFlow): Step[] {
   const o = f.order
@@ -50,7 +50,9 @@ function explain(m: Move): string {
     return 'Delivery validated → goods leave the warehouse. Their cost moves from Inventory (an asset) to Cost of Goods Sold (an expense).'
   if (m.move_type === 'out_invoice')
     return 'Invoice posted → we earned revenue. The customer now owes us the total (Receivable); VAT collected is owed to the state.'
-  if (m.journal_name === 'Bank') return 'Payment received → money arrives in the bank and the customer no longer owes it (Receivable goes down).'
+  if (m.move_type === 'out_refund')
+    return 'Credit note → the opposite of an invoice: sales and VAT owed go down, and the customer owes us less (or we owe them a refund).'
+  if (m.journal_name === 'Bank') return 'Payment → money moves between the bank and the customer, and what they owe (or we owe them) is cleared.'
   return ''
 }
 
@@ -66,11 +68,16 @@ export default function SaleOrderDetail() {
   if (!data) return null
 
   const o = data.order
-  const steps = buildSteps(data)
+  // The flow diagram follows the sale itself; returns and credit notes are shown under After-sales.
+  const deliveries = data.pickings.filter((p) => p.kind === 'outgoing')
+  const returns = data.pickings.filter((p) => p.kind === 'return')
+  const invoices = data.invoices.filter((i) => i.move_type === 'out_invoice')
+  const credits = data.invoices.filter((i) => i.move_type === 'out_refund')
+  const steps = buildSteps({ ...data, pickings: deliveries, invoices })
   const current = steps.find((s) => s.state === 'current')
-  const readyPicking = data.pickings.find((p) => p.state === 'ready')
-  const draftInvoice = data.invoices.find((i) => i.state === 'draft')
-  const openInvoice = data.invoices.find((i) => i.state === 'posted' && num(i.amount_residual) > 0)
+  const readyPicking = deliveries.find((p) => p.state === 'ready')
+  const draftInvoice = invoices.find((i) => i.state === 'draft')
+  const openInvoice = invoices.find((i) => i.state === 'posted' && num(i.amount_residual) > 0)
 
   const act = async (key: string, fn: () => Promise<unknown>, msg: string) => {
     if (await run(key, fn, msg)) reload()
@@ -97,6 +104,8 @@ export default function SaleOrderDetail() {
   })()
 
   const stockMoves = data.pickings.flatMap((p) => p.moves.map((m) => ({ ...m, picking: p })))
+  const canReturn = o.state === 'sale' && o.lines.some((l) => num(l.qty_delivered) > 0)
+  const canCredit = invoices.some((i) => i.state === 'posted')
 
   return (
     <>
@@ -184,13 +193,15 @@ export default function SaleOrderDetail() {
                       <div className="truncate text-[14px] font-medium">{m.product_name}</div>
                       <div className="text-[12px] text-label-3">{m.picking.source_location_name} → {m.picking.dest_location_name}</div>
                     </div>
-                    <span className={cx('font-semibold tnum', m.state === 'done' ? 'text-red' : 'text-label-3')}>−{qty(m.quantity)}</span>
+                    <span className={cx('font-semibold tnum', m.state !== 'done' ? 'text-label-3' : m.picking.kind === 'return' ? 'text-green' : 'text-red')}>{m.picking.kind === 'return' ? '+' : '−'}{qty(m.quantity)}</span>
                     <PickingState picking={m.picking} />
                   </li>
                 ))}
               </ul>
             )}
           </Card>
+
+          <AfterSales order={o} returns={returns} credits={credits} canReturn={canReturn} canCredit={canCredit} onChange={reload} />
         </div>
 
         <Card title="Accounting impact" action={<Pill tone="blue">{data.entries.length} entries</Pill>}>

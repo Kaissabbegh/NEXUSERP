@@ -5,7 +5,16 @@ import { Spinner } from './components/ui'
 import { useAuth } from './lib/auth'
 import Login from './pages/Login'
 
+const Academy = lazy(() => import('./pages/Academy'))
+const AcademyChapter = lazy(() => import('./pages/AcademyChapter'))
 const Accounts = lazy(() => import('./pages/Accounts'))
+const AssetDetail = lazy(() => import('./pages/AssetDetail'))
+const Assets = lazy(() => import('./pages/Assets'))
+const Crm = lazy(() => import('./pages/Crm'))
+const Employees = lazy(() => import('./pages/Employees'))
+const Expenses = lazy(() => import('./pages/Expenses'))
+const Payroll = lazy(() => import('./pages/Payroll'))
+const PayrollDetail = lazy(() => import('./pages/PayrollDetail'))
 const Aged = lazy(() => import('./pages/Aged'))
 const BalanceSheet = lazy(() => import('./pages/BalanceSheet'))
 const Boms = lazy(() => import('./pages/Boms'))
@@ -43,6 +52,15 @@ export default function App() {
       <Route element={<Layout />}>
         <Route index element={<Dashboard />} />
         <Route path="learn" element={<Learn />} />
+        <Route path="academy" element={<Academy />} />
+        <Route path="academy/:slug" element={<AcademyChapter />} />
+        <Route path="crm" element={<Crm />} />
+        <Route path="employees" element={<Employees />} />
+        <Route path="payroll" element={<Payroll />} />
+        <Route path="payroll/:id" element={<PayrollDetail />} />
+        <Route path="expenses" element={<Expenses />} />
+        <Route path="assets" element={<Assets />} />
+        <Route path="assets/:id" element={<AssetDetail />} />
         <Route path="scenarios" element={<Scenarios />} />
         <Route path="scenarios/:key" element={<ScenarioPlayer />} />
         <Route path="contacts" element={<Contacts />} />

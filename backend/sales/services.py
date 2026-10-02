@@ -8,6 +8,7 @@ from rest_framework.exceptions import ValidationError
 from accounting import services as acc
 from accounting.models import Move, MoveLine
 from inventory import services as stock
+from crm.models import Lead
 from inventory.models import Picking
 from masterdata.models import Sequence
 
@@ -52,6 +53,8 @@ def confirm(order: SaleOrder) -> SaleOrder:
     to_deliver = [{"product": l.product, "quantity": l.quantity, "sale_line": l} for l in lines if l.product.is_deliverable]
     if to_deliver:
         stock.create_picking(Picking.Kind.OUTGOING, to_deliver, partner=partner, origin=order.name, sale_order=order)
+    # A confirmed quotation means the CRM opportunity behind it is won.
+    order.leads.exclude(stage=Lead.Stage.WON).update(stage=Lead.Stage.WON, probability=100, closed_at=timezone.now())
     return order
 
 
@@ -75,9 +78,9 @@ def create_invoice(order: SaleOrder) -> Move:
         raise ValidationError("Confirm the quotation before invoicing.")
     if order.invoices.filter(state=Move.State.DRAFT).exists():
         raise ValidationError("A draft invoice already exists for this order. Confirm or cancel it first.")
-    lines = [l for l in order.lines.select_related("product__category", "tax") if l.quantity > l.qty_invoiced]
+    lines = [l for l in order.lines.select_related("product__category", "tax") if l.qty_to_invoice > 0]
     if not lines:
-        raise ValidationError("Everything on this order is already invoiced.")
+        raise ValidationError("Nothing to invoice: deliver the goods first (or everything is already invoiced).")
 
     partner = order.partner
     today = timezone.localdate()
@@ -89,7 +92,7 @@ def create_invoice(order: SaleOrder) -> Move:
     untaxed = tax_total = ZERO
     taxes: dict[int, tuple] = {}
     for l in lines:
-        qty = l.quantity - l.qty_invoiced
+        qty = l.qty_to_invoice
         base = (qty * l.price_unit * (Decimal(100) - l.discount) / Decimal(100)).quantize(Decimal("0.01"))
         MoveLine.objects.create(
             move=invoice, account=l.product.category.income_account, partner=partner, product=l.product,
@@ -120,7 +123,7 @@ def create_invoice(order: SaleOrder) -> Move:
 def flow(order: SaleOrder) -> dict:
     """Everything the Order-to-Cash diagram needs, in one payload."""
     pickings = list(order.pickings.prefetch_related("moves__product").exclude(state=Picking.State.CANCEL))
-    invoices = list(order.invoices.exclude(state=Move.State.CANCEL))
+    invoices = list(order.invoices.exclude(state=Move.State.CANCEL).order_by("id"))
     payments = [p for inv in invoices for p in inv.payments.all()]
     entries = (
         Move.objects.filter(state=Move.State.POSTED)
@@ -133,3 +136,74 @@ def flow(order: SaleOrder) -> dict:
         .order_by("created_at", "id")
     )
     return {"pickings": pickings, "invoices": invoices, "payments": payments, "entries": entries}
+
+
+# --- After-sales: returns and credit notes --------------------------------------------------------
+@transaction.atomic
+def create_return(order: SaleOrder, items: list[tuple]) -> Picking:
+    """items: [(sale_line, qty)]. Goods come back from the customer into stock (validated separately)."""
+    if order.state != SaleOrder.State.SALE:
+        raise ValidationError("Only confirmed orders can have returns.")
+    lines = []
+    for line, qty in items:
+        qty = Decimal(str(qty))
+        if qty <= 0:
+            continue
+        if qty > line.qty_delivered:
+            raise ValidationError(f"Cannot return {qty:g} {line.product.name}: only {line.qty_delivered:g} delivered.")
+        lines.append({"product": line.product, "quantity": qty, "sale_line": line})
+    if not lines:
+        raise ValidationError("Choose at least one product to return.")
+    return stock.create_picking(Picking.Kind.RETURN, lines, partner=order.partner, origin=f"Return of {order.name}", sale_order=order)
+
+
+@transaction.atomic
+def create_credit_note(order: SaleOrder, items: list[tuple], apply: bool = True) -> Move:
+    """items: [(sale_line, qty)]. Posts a credit note that reverses revenue and VAT, then uses it to reduce
+    any unpaid invoice of the order. What's left is owed back to the customer (refund)."""
+    invoices = [i for i in order.invoices.filter(move_type=Move.MoveType.OUT_INVOICE, state=Move.State.POSTED)]
+    if not invoices:
+        raise ValidationError("There is no posted invoice to correct.")
+    partner = order.partner
+    note = Move.objects.create(
+        move_type=Move.MoveType.OUT_REFUND, journal=acc.journal("INV"), partner=partner, date=timezone.localdate(),
+        invoice_date_due=timezone.localdate(), ref=f"Credit for {invoices[-1].name}", sale_order=order, reversed_entry=invoices[-1],
+    )
+    untaxed = tax_total = ZERO
+    taxes: dict[int, list] = {}
+    for line, qty in items:
+        qty = Decimal(str(qty))
+        if qty <= 0:
+            continue
+        if qty > line.qty_invoiced:
+            raise ValidationError(f"Cannot credit {qty:g} {line.product.name}: only {line.qty_invoiced:g} invoiced.")
+        base = (qty * line.price_unit * (Decimal(100) - line.discount) / Decimal(100)).quantize(Decimal("0.01"))
+        MoveLine.objects.create(move=note, account=line.product.category.income_account, partner=partner, product=line.product,
+                                name=f"Return: {line.product.name}", kind=MoveLine.Kind.PRODUCT, quantity=qty,
+                                price_unit=line.price_unit, tax=line.tax, debit=base)
+        untaxed += base
+        if line.tax:
+            amount = line.tax.compute(base)
+            taxes.setdefault(line.tax_id, [line.tax, ZERO])[1] += amount
+            tax_total += amount
+        line.qty_invoiced -= qty
+        line.save(update_fields=["qty_invoiced"])
+    if untaxed == 0:
+        note.delete()
+        raise ValidationError("Choose at least one product to credit.")
+    for tax, amount in taxes.values():
+        MoveLine.objects.create(move=note, account=tax.account, partner=partner, name=tax.name, kind=MoveLine.Kind.TAX, tax=tax, debit=amount)
+    total = untaxed + tax_total
+    MoveLine.objects.create(move=note, account=partner.receivable_account, partner=partner, name="Credit to customer",
+                            kind=MoveLine.Kind.RECEIVABLE, credit=total)
+    note.amount_untaxed, note.amount_tax, note.amount_total = untaxed, tax_total, total
+    note.save(update_fields=["amount_untaxed", "amount_tax", "amount_total"])
+    acc.post(note)
+    if apply:
+        for inv in invoices:
+            if note.amount_residual <= 0:
+                break
+            if inv.amount_residual > 0:
+                acc.apply_credit(note, inv)
+                note.refresh_from_db()
+    return note

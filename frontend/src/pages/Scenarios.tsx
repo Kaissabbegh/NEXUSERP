@@ -12,7 +12,7 @@ export default function Scenarios() {
 
   return (
     <>
-      <PageHeader title="Guided Scenarios" subtitle="Pick a story. The ERP plays it for real, one business event at a time, and explains every step." />
+      <PageHeader title="Guided Scenarios" subtitle="10 stories across every department. The ERP plays each one for real, one business event at a time, and explains every step." />
 
       <Lesson step="How it works" title="Watch the ERP work by itself">
         <p>Each scenario creates <b>real documents</b> in NexusERP (orders, deliveries, invoices, payments…). After every step you'll see <b>who</b> did it, <b>what changed</b> in stock, the <b>journal entry</b> it produced, and how the <b>money buckets</b> moved.</p>
@@ -45,7 +45,7 @@ export default function Scenarios() {
                     ))}
                   </ol>
                   <div className="mt-auto pt-5">
-                    <span className={cx('inline-flex h-9 items-center gap-1.5 rounded-full px-4 text-[14px] font-medium text-white transition group-hover:brightness-110', c.solid)}>
+                    <span className={cx('inline-flex h-9 items-center gap-1.5 rounded-full px-4 text-[14px] font-medium transition group-hover:brightness-110', c.solid, s.color === 'yellow' || s.color === 'teal' ? 'text-black' : 'text-white')}>
                       <Play className="size-4 fill-current" /> Play scenario
                     </span>
                   </div>

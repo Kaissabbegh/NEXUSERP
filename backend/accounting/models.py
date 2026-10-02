@@ -70,6 +70,7 @@ class Move(models.Model):
     class MoveType(models.TextChoices):
         ENTRY = "entry", "Journal Entry"
         OUT_INVOICE = "out_invoice", "Customer Invoice"
+        OUT_REFUND = "out_refund", "Customer Credit Note"
         IN_INVOICE = "in_invoice", "Vendor Bill"
 
     class State(models.TextChoices):
@@ -95,6 +96,8 @@ class Move(models.Model):
     picking = models.ForeignKey("inventory.Picking", null=True, blank=True, on_delete=models.PROTECT, related_name="valuation_moves")
     purchase_order = models.ForeignKey("purchase.PurchaseOrder", null=True, blank=True, on_delete=models.PROTECT, related_name="bills")
     production = models.ForeignKey("mrp.ManufacturingOrder", null=True, blank=True, on_delete=models.PROTECT, related_name="valuation_moves")
+    reversed_entry = models.ForeignKey("self", null=True, blank=True, on_delete=models.PROTECT, related_name="credit_notes",
+                                       help_text="For a credit note: the invoice it corrects.")
     amount_untaxed = models.DecimalField(max_digits=14, decimal_places=2, default=0)
     amount_tax = models.DecimalField(max_digits=14, decimal_places=2, default=0)
     amount_total = models.DecimalField(max_digits=14, decimal_places=2, default=0)
@@ -109,7 +112,7 @@ class Move(models.Model):
 
     @property
     def is_invoice(self) -> bool:
-        return self.move_type in (self.MoveType.OUT_INVOICE, self.MoveType.IN_INVOICE)
+        return self.move_type in (self.MoveType.OUT_INVOICE, self.MoveType.OUT_REFUND, self.MoveType.IN_INVOICE)
 
 
 class MoveLine(models.Model):

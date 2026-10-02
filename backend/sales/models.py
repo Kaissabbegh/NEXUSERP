@@ -53,12 +53,17 @@ class SaleOrder(models.Model):
 
     @property
     def invoice_status(self) -> str:
+        """Goods are invoiced once delivered (and credited when returned); services as ordered."""
         if self.state != self.State.SALE:
             return "no"
-        lines = list(self.lines.all())
-        if all(l.qty_invoiced >= l.quantity for l in lines):
+        lines = list(self.lines.select_related("product"))
+        if any(l.qty_to_invoice > 0 for l in lines):
+            return "to_invoice"
+        goods = [l for l in lines if l.product.is_deliverable]
+        returned = self.pickings.filter(kind="return", state="done").exists()
+        if returned or all(l.qty_delivered >= l.quantity for l in goods):
             return "invoiced"
-        return "to_invoice"
+        return "no"  # waiting for the delivery
 
 
 class SaleOrderLine(models.Model):
@@ -86,3 +91,8 @@ class SaleOrderLine(models.Model):
     @property
     def tax_amount(self) -> Decimal:
         return self.tax.compute(self.subtotal) if self.tax else Decimal("0")
+
+    @property
+    def qty_to_invoice(self) -> Decimal:
+        basis = self.qty_delivered if self.product.is_deliverable else self.quantity
+        return max(basis - self.qty_invoiced, Decimal("0"))

@@ -1,7 +1,8 @@
 import { AnimatePresence, motion } from 'framer-motion'
 import {
   ArrowLeftRight, BarChart3, BookA, BookOpen, Boxes, Factory, FileText, Landmark, LayoutGrid, LogOut, Map as MapIcon, Menu,
-  Package, PlayCircle, ReceiptText, RefreshCw, Scale, ScrollText, ShoppingBag, ShoppingCart, Users, X,
+  Package, PlayCircle, ReceiptText, RefreshCw, Scale, ScrollText, ShoppingBag, ShoppingCart, Users, X, GraduationCap, Target,
+  IdCard, Wallet, Receipt, Truck,
 } from 'lucide-react'
 import { Suspense, useEffect, useState } from 'react'
 import { NavLink, Outlet, useLocation } from 'react-router-dom'
@@ -12,8 +13,9 @@ import { Spinner } from './ui'
 const NAV = [
   { section: null, items: [
     { to: '/', label: 'Dashboard', icon: LayoutGrid, color: 'bg-blue' },
+    { to: '/academy', label: 'ERP Academy', icon: GraduationCap, color: 'bg-purple' },
     { to: '/scenarios', label: 'Guided Scenarios', icon: PlayCircle, color: 'bg-pink' },
-    { to: '/learn', label: 'ERP Map', icon: MapIcon, color: 'bg-purple' },
+    { to: '/learn', label: 'ERP Map', icon: MapIcon, color: 'bg-teal' },
     { to: '/glossary', label: 'Glossary', icon: BookA, color: 'bg-indigo' },
   ] },
   { section: 'Master Data', items: [
@@ -21,7 +23,8 @@ const NAV = [
     { to: '/products', label: 'Products', icon: Package, color: 'bg-orange' },
     { to: '/accounts', label: 'Chart of Accounts', icon: BookOpen, color: 'bg-indigo' },
   ] },
-  { section: 'Sales', items: [
+  { section: 'Sales & CRM', items: [
+    { to: '/crm', label: 'CRM Pipeline', icon: Target, color: 'bg-teal' },
     { to: '/sales', label: 'Sales Orders', icon: ShoppingBag, color: 'bg-green' },
   ] },
   { section: 'Purchasing', items: [
@@ -36,9 +39,15 @@ const NAV = [
     { to: '/boms', label: 'Bills of Materials', icon: ScrollText, color: 'bg-purple' },
     { to: '/manufacturing', label: 'Manufacturing Orders', icon: Factory, color: 'bg-indigo' },
   ] },
+  { section: 'HR & Payroll', items: [
+    { to: '/employees', label: 'Employees', icon: IdCard, color: 'bg-indigo' },
+    { to: '/payroll', label: 'Payroll', icon: Wallet, color: 'bg-green' },
+    { to: '/expenses', label: 'Expense Claims', icon: Receipt, color: 'bg-teal' },
+  ] },
   { section: 'Accounting', items: [
     { to: '/invoices', label: 'Customer Invoices', icon: ReceiptText, color: 'bg-blue' },
     { to: '/bills', label: 'Vendor Bills', icon: ReceiptText, color: 'bg-orange' },
+    { to: '/assets', label: 'Fixed Assets', icon: Truck, color: 'bg-yellow' },
     { to: '/entries', label: 'Journal Entries', icon: FileText, color: 'bg-surface-3' },
   ] },
   { section: 'Reports', items: [
@@ -103,7 +112,9 @@ function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
 export default function Layout() {
   const [mobileOpen, setMobileOpen] = useState(false)
   const location = useLocation()
-  useEffect(() => setMobileOpen(false), [location.pathname])
+  useEffect(() => {
+    setMobileOpen(false)
+  }, [location.pathname])
 
   return (
     <div className="min-h-dvh">

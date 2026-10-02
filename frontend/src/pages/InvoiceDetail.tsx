@@ -22,7 +22,8 @@ export default function InvoiceDetail() {
   if (!inv) return null
 
   const bill = inv.move_type === 'in_invoice'
-  const word = bill ? 'Bill' : 'Invoice'
+  const refund = inv.move_type === 'out_refund'
+  const word = bill ? 'Bill' : refund ? 'Credit Note' : 'Invoice'
   const productLines = (inv.lines ?? []).filter((l) => l.kind === 'product')
   const paidPct = num(inv.amount_total) ? ((num(inv.amount_total) - num(inv.amount_residual)) / num(inv.amount_total)) * 100 : 0
 
@@ -47,7 +48,7 @@ export default function InvoiceDetail() {
           ) : inv.state === 'posted' && num(inv.amount_residual) > 0 ? (
             <div className="flex items-center gap-2">
               <input className="field !w-36 !py-1.5 tnum" type="number" min={0} step="0.01" placeholder={num(inv.amount_residual).toFixed(2)} value={amount} onChange={(e) => setAmount(e.target.value)} />
-              <Button variant="success" loading={busy === 'pay'} onClick={() => act('pay', () => post(`/moves/${inv.id}/register-payment/`, { amount: amount || null }), bill ? 'Payment sent' : 'Payment registered')}>{bill ? 'Pay Vendor' : 'Register Payment'}</Button>
+              <Button variant="success" loading={busy === 'pay'} onClick={() => act('pay', () => post(`/moves/${inv.id}/register-payment/`, { amount: amount || null }), bill ? 'Payment sent' : refund ? 'Customer refunded' : 'Payment registered')}>{bill ? 'Pay Vendor' : refund ? 'Refund Customer' : 'Register Payment'}</Button>
             </div>
           ) : null
         }
@@ -90,7 +91,7 @@ export default function InvoiceDetail() {
                   <td className="py-2.5">{l.name}</td>
                   <td className="py-2.5 text-right tnum">{qty(l.quantity)}</td>
                   <td className="py-2.5 text-right tnum">{money(l.price_unit)}</td>
-                  <td className="py-2.5 text-right tnum">{money(bill ? l.debit : l.credit)}</td>
+                  <td className="py-2.5 text-right tnum">{money(bill || refund ? l.debit : l.credit)}</td>
                 </tr>
               ))}
             </tbody>
@@ -99,7 +100,7 @@ export default function InvoiceDetail() {
             <div className="flex justify-between"><dt className="text-label-2">Untaxed</dt><dd className="tnum">{money(inv.amount_untaxed)}</dd></div>
             <div className="flex justify-between"><dt className="text-label-2">VAT</dt><dd className="tnum">{money(inv.amount_tax)}</dd></div>
             <div className="flex justify-between border-t border-line pt-1.5 text-[17px] font-semibold"><dt>Total</dt><dd className="tnum">{money(inv.amount_total)}</dd></div>
-            {inv.state === 'posted' && <div className="flex justify-between font-semibold text-blue"><dt>Amount due</dt><dd className="tnum">{money(inv.amount_residual)}</dd></div>}
+            {inv.state === 'posted' && <div className="flex justify-between font-semibold text-blue"><dt>{refund ? 'Still to refund' : 'Amount due'}</dt><dd className="tnum">{money(inv.amount_residual)}</dd></div>}
           </dl>
           {inv.state === 'posted' && (
             <div className="mt-5">
@@ -115,7 +116,7 @@ export default function InvoiceDetail() {
         <div className="space-y-4">
           <div>
             <h2 className="mb-2 text-[17px] font-semibold">Behind the scenes: the journal entry</h2>
-            <JournalEntry move={inv} explain={inv.state === 'draft' ? 'Draft: these lines are prepared but not in the books yet. Confirming posts them.' : bill ? 'Payable is credited (we owe the vendor). Stock Interim is cleared and the VAT we paid becomes reclaimable.' : 'Receivable is debited (customer owes us); Sales and VAT Payable are credited.'} />
+            <JournalEntry move={inv} explain={inv.state === 'draft' ? 'Draft: these lines are prepared but not in the books yet. Confirming posts them.' : bill ? 'Payable is credited (we owe the vendor). Stock Interim is cleared and the VAT we paid becomes reclaimable.' : refund ? 'The mirror of an invoice: Sales and VAT Payable are debited (reduced) and Receivable is credited. If the customer already paid, we owe them a refund.' : 'Receivable is debited (customer owes us); Sales and VAT Payable are credited.'} />
           </div>
           {!!inv.payments?.length && (
             <Card title="Payments">

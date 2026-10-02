@@ -40,7 +40,7 @@ export default function Entries() {
       ) : (
         <div className="card divide-y divide-line/60">
           {data.map((m) => (
-            <Link key={m.id} to={m.move_type === 'out_invoice' ? `/invoices/${m.id}` : m.move_type === 'in_invoice' ? `/bills/${m.id}` : `/entries/${m.id}`} className="flex flex-wrap items-center gap-3 px-4 py-3 transition hover:bg-white/[0.03]">
+            <Link key={m.id} to={m.move_type === 'out_invoice' || m.move_type === 'out_refund' ? `/invoices/${m.id}` : m.move_type === 'in_invoice' ? `/bills/${m.id}` : `/entries/${m.id}`} className="flex flex-wrap items-center gap-3 px-4 py-3 transition hover:bg-white/[0.03]">
               <span className="w-32 font-medium tnum">{m.name}</span>
               <span className="w-40 text-[13px] text-label-2">{m.journal_name}</span>
               <span className="min-w-0 flex-1 truncate text-[14px]">{m.partner_name ?? ''}{m.ref ? <span className="text-label-3"> · {m.ref}</span> : null}</span>

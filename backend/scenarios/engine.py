@@ -37,7 +37,8 @@ DEBIT_NORMAL = {"asset", "expense"}
 DOC_URLS = {
     "sale": "/sales/{id}", "purchase": "/purchases/{id}", "picking": "/transfers?open={id}", "invoice": "/invoices/{id}",
     "bill": "/bills/{id}", "entry": "/entries/{id}", "mo": "/manufacturing/{id}", "partner": "/contacts",
-    "product": "/products", "report": "{id}",
+    "product": "/products", "report": "{id}", "lead": "/crm?open={id}", "payroll": "/payroll/{id}",
+    "expense": "/expenses?open={id}", "asset": "/assets/{id}", "credit": "/invoices/{id}",
 }
 
 

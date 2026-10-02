@@ -16,6 +16,10 @@ from django.utils import timezone
 
 from accounting import services as acc
 from accounting.models import Account, Journal, Move
+from crm.models import Lead
+from fixedassets import services as assets
+from fixedassets.models import FixedAsset
+from hr.models import Department, Employee, ExpenseClaim
 from inventory import services as stock
 from inventory.models import Location, Picking, Warehouse
 from masterdata.models import Partner, PaymentTerm, Product, ProductCategory, Tax, UnitOfMeasure
@@ -96,6 +100,10 @@ class Command(BaseCommand):
             self.owner_and_expenses()
             self.purchase_history()
             self.manufacturing_history()
+            self.departments_setup()
+            self.crm_history()
+            self.hr_history()
+            self.assets_history()
         self.demo_user()
         self.stdout.write(self.style.SUCCESS("Nexus Furniture demo data " + ("loaded." if fresh else "upgraded.")))
 
@@ -328,6 +336,79 @@ class Command(BaseCommand):
         mrp.produce(done)
         standing = BillOfMaterials.objects.get(product__sku="DESK-002")
         mrp.confirm(mrp.create(standing, D(1), origin="Customer special order"))
+    # --- Full SME: extra accounts, CRM, HR, fixed assets ----------------------------------------
+    def departments_setup(self):
+        for code, name, typ, desc in [
+            ("152000", "Accumulated Depreciation", T.FIXED_ASSET,
+             "Wear and tear already booked on fixed assets. A negative asset: it reduces their book value."),
+            ("153000", "Vehicles", T.FIXED_ASSET, "Company vans and cars."),
+            ("254000", "Social Security Payable", T.CURRENT_LIABILITY, "Payroll contributions owed to social security."),
+            ("255000", "Income Tax Withheld", T.CURRENT_LIABILITY, "Income tax kept from salaries, owed to the tax office."),
+            ("256000", "Salaries Payable", T.CURRENT_LIABILITY, "Net salaries owed to employees until payday."),
+            ("257000", "Employee Expenses Payable", T.CURRENT_LIABILITY, "Money owed to employees for expenses they paid."),
+            ("621000", "Employer Social Charges", T.EXPENSE, "The company's own payroll contributions on top of gross salaries."),
+            ("640000", "Travel & Fuel", T.EXPENSE, "Business trips, hotels, fuel."),
+            ("650000", "Office Supplies", T.EXPENSE, "Paper, small equipment, consumables."),
+            ("681000", "Depreciation Expense", T.EXPENSE, "The monthly cost of using fixed assets."),
+        ]:
+            Account.objects.get_or_create(code=code, defaults=dict(name=name, account_type=typ, description=desc))
+        Journal.objects.get_or_create(code="SAL", defaults=dict(name="Payroll", journal_type=Journal.Type.GENERAL))
+
+    def crm_history(self):
+        if Lead.objects.exists():
+            return
+        for name, company, contact, source, revenue, stage in [
+            ("Furnish new head office (40 desks)", "Orion Bank", "Sara Idrissi", "Trade show", 38000, "new"),
+            ("Ergonomic chairs for call center", "Callify", "Omar Benali", "Website", 9600, "qualified"),
+            ("Meeting room upgrade", "Atlas Consulting", "Karim Alaoui", "Existing customer", 4300, "qualified"),
+            ("Co-working space expansion", "Echo Coworking", "Lina Tazi", "Referral", 7200, "proposition"),
+            ("Law library shelving", "Cedar & Co. Law Firm", "Youssef Amrani", "Existing customer", 2280, "won"),
+            ("School furniture tender", "Green Valley School", "Nadia Fassi", "Public tender", 15500, "lost"),
+        ]:
+            Lead.objects.create(name=name, company_name=company, contact_name=contact, source=source,
+                                expected_revenue=revenue, stage=stage, probability=Lead.PROBABILITY[stage],
+                                partner=Partner.objects.filter(name=company).first(),
+                                lost_reason="Price too high vs competitor" if stage == "lost" else "")
+
+    def hr_history(self):
+        if Employee.objects.exists():
+            return
+        today = timezone.localdate()
+        depts = {n: Department.objects.create(name=n) for n in ["Management", "Sales", "Warehouse", "Workshop", "Finance"]}
+        for name, title, dept, wage, years in [
+            ("Amina Haddad", "General Manager", "Management", 4800, 6),
+            ("Youssef Karimi", "Sales Representative", "Sales", 2400, 3),
+            ("Salma Bennani", "Sales Representative", "Sales", 2300, 1),
+            ("Hassan Ouali", "Warehouse Lead", "Warehouse", 2100, 4),
+            ("Rachid Mansouri", "Furniture Assembler", "Workshop", 1900, 2),
+            ("Leila Chraibi", "Accountant", "Finance", 2700, 5),
+        ]:
+            Employee.objects.create(name=name, job_title=title, department=depts[dept], wage=wage,
+                                    hire_date=today.replace(year=today.year - years, day=1),
+                                    email=f"{name.split()[0].lower()}@nexusfurniture.example")
+        employees = {e.name: e for e in Employee.objects.all()}
+        travel, supplies = Account.objects.get(code="640000"), Account.objects.get(code="650000")
+        ExpenseClaim.objects.create(employee=employees["Youssef Karimi"], description="Fuel – client visits Rabat",
+                                    account=travel, amount=85, date=today - timedelta(days=6))
+        ExpenseClaim.objects.create(employee=employees["Leila Chraibi"], description="Printer paper and toner",
+                                    account=supplies, amount=64, date=today - timedelta(days=3))
+
+    def assets_history(self):
+        if FixedAsset.objects.exists():
+            return
+        today = timezone.localdate()
+        start = (today - timedelta(days=95)).replace(day=1)
+        laptops = FixedAsset.objects.create(name="Office laptops (6)", account=Account.objects.get(code="151000"),
+                                            value=D(7200), acquisition_date=start, useful_life_months=36)
+        a = Account.objects.get
+        tech, _ = Partner.objects.get_or_create(name="TechZone Electronics", defaults=dict(
+            city="Casablanca", country="Morocco", email="b2b@techzone.example", is_vendor=True,
+            payment_term=PaymentTerm.objects.filter(days=30).first(), receivable_account=a(code="121000"),
+            payable_account=a(code="211000")))
+        assets.purchase(laptops, tech)
+        acc.register_payment(laptops.bill, date=start)
+        for _ in range(3):
+            assets.depreciate_next(laptops)
     def demo_user(self):
         User = get_user_model()
         if User.objects.filter(username="demo").exists():

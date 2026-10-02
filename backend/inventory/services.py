@@ -13,7 +13,7 @@ from .models import Location, Picking, StockMove
 
 ZERO = Decimal("0")
 CENT = Decimal("0.01")
-PREFIX = {Picking.Kind.INCOMING: "IN", Picking.Kind.OUTGOING: "OUT", Picking.Kind.ADJUSTMENT: "ADJ"}
+PREFIX = {Picking.Kind.INCOMING: "IN", Picking.Kind.OUTGOING: "OUT", Picking.Kind.ADJUSTMENT: "ADJ", Picking.Kind.RETURN: "RET"}
 
 # Accounts balancing stock valuation when the picking doesn't name one.
 INTERIM_RECEIVED = "110200"   # goods received, vendor bill not yet posted
@@ -67,6 +67,8 @@ def create_picking(kind: str, lines: list[dict], *, partner=None, origin="", sal
         src, dst = internal, location("customer")
     elif kind == Picking.Kind.INCOMING:
         src, dst = location("supplier"), internal
+    elif kind == Picking.Kind.RETURN:
+        src, dst = location("customer"), internal
     else:
         src, dst = (internal, location("inventory")) if outbound_adjustment else (location("inventory"), internal)
     picking = Picking.objects.create(
@@ -110,7 +112,7 @@ def _default_counterpart(picking: Picking, product: Product, outgoing: bool) -> 
         return picking.counterpart_account
     if picking.kind == Picking.Kind.ADJUSTMENT:
         return Account.objects.get(code=INVENTORY_DIFFERENCES)
-    if outgoing:
+    if outgoing or picking.kind == Picking.Kind.RETURN:  # a return reverses the cost of goods sold
         return product.category.expense_account  # cost of goods sold
     return Account.objects.get(code=INTERIM_RECEIVED)
 
@@ -138,7 +140,7 @@ def validate(picking: Picking) -> Picking:
         m.state, m.date, m.unit_cost = Picking.State.DONE, now, price
         m.save(update_fields=["state", "date", "unit_cost"])
         if m.sale_line_id:
-            m.sale_line.qty_delivered += m.quantity
+            m.sale_line.qty_delivered += -m.quantity if picking.kind == Picking.Kind.RETURN else m.quantity
             m.sale_line.save(update_fields=["qty_delivered"])
         if m.purchase_line_id:
             m.purchase_line.qty_received += m.quantity

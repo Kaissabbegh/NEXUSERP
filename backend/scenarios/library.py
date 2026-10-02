@@ -3,13 +3,19 @@
 import math
 from decimal import Decimal
 
-from django.db.models import Sum
+from django.db.models import Count, Sum
 from django.utils import timezone
 from rest_framework.exceptions import ValidationError
 
 from accounting import reports
 from accounting import services as acc
 from accounting.models import Account, Move, MoveLine
+from crm import services as crm
+from crm.models import Lead
+from fixedassets import services as assets
+from fixedassets.models import FixedAsset
+from hr import services as hr
+from hr.models import Employee, ExpenseClaim, PayrollRun
 from inventory import services as stock
 from inventory.models import Picking
 from masterdata.models import Partner, PaymentTerm, Product
@@ -490,11 +496,14 @@ def s5_rent(ctx):
 
 
 def s5_salaries(ctx):
-    entry = manual(f"Salaries {timezone.localdate():%B}", "620000", "101000", Decimal(4200))
+    run = hr.pay_authorities(hr.pay_salaries(hr.post_run(hr.create_run(timezone.localdate()))))
+    t = run.totals()
     return {
-        "explanation": "Salaries of $4,200 are paid to the team. Salaries (an expense) go up, Bank goes down.",
-        "takeaway": "People are usually the biggest running cost of a company.",
-        "documents": [doc("entry", entry.name, entry.id)],
+        "explanation": (f"HR runs this month's payroll ({run.name}) for {run.payslips.count()} employees: gross salaries "
+                        f"{m(t['gross'])} plus {m(t['employer_social'])} of employer social charges. Employees receive "
+                        f"{m(t['net'])} net; the rest goes to social security and the tax office. All of it is paid from the Bank."),
+        "takeaway": "People are usually the biggest running cost of a company. The full payroll story is in its own scenario.",
+        "documents": [doc("payroll", run.name, run.id)],
     }
 
 
@@ -535,9 +544,339 @@ def s5_pl(ctx):
     }
 
 
+# =============================================================================================
+# 6. Win a new client (CRM)
+# =============================================================================================
+LEAD_ITEMS = [("DESK-002", 4), ("CHAIR-001", 4)]
+
+
+def unique_name(model, field, base):
+    name, n = base, 1
+    while model.objects.filter(**{field: name}).exists():
+        n += 1
+        name = f"{base} #{n}"
+    return name
+
+
+def s6_lead(ctx):
+    company = unique_name(Lead, "company_name", "BlueWave Tech")
+    estimate = sum((product(s).sale_price * n for s, n in LEAD_ITEMS), ZERO)
+    lead = Lead.objects.create(name="Desks and chairs for a new office", company_name=company, contact_name="Mehdi Rami",
+                               email="mehdi@bluewave.example", source="Website", expected_revenue=estimate,
+                               probability=Lead.PROBABILITY["new"])
+    ctx.update(lead=lead.id)
+    return {
+        "explanation": (f"Mehdi from {company}, a young startup, fills in the contact form on our website: they're moving into "
+                        f"a new office and need desks and chairs. The CRM creates a LEAD worth about {m(estimate)}, with a 10% "
+                        f"chance of winning for now. {company} is NOT a customer yet: it only exists in the CRM."),
+        "takeaway": "A lead is a possible sale. Nothing exists in Sales, Inventory or Accounting yet.",
+        "documents": [doc("lead", lead.name, lead.id)],
+    }
+
+
+def s6_qualify(ctx):
+    lead = crm.qualify(Lead.objects.get(pk=ctx["lead"]))
+    return {
+        "explanation": (f"Our salesperson calls Mehdi: the budget is confirmed, he is the decision-maker, and they need the "
+                        f"furniture within a month. The lead is QUALIFIED: it becomes a real opportunity and the probability rises "
+                        f"to {lead.probability}%."),
+        "takeaway": "Qualifying = checking Budget, Authority, Need and Timing (BANT) before spending time on a proposal.",
+        "documents": [doc("lead", lead.name, lead.id)],
+    }
+
+
+def s6_quote(ctx):
+    lead = Lead.objects.get(pk=ctx["lead"])
+    order = crm.create_quotation(lead, [(product(s), Decimal(n)) for s, n in LEAD_ITEMS])
+    lead.refresh_from_db()
+    ctx.update(order=order.id)
+    return {
+        "explanation": (f"The salesperson sends a proposal. From the opportunity, the CRM creates the customer record "
+                        f"'{lead.partner.name}' in master data and quotation {order.name}: 4 Standing Desk Pro + 4 Ergonomic Mesh "
+                        f"Chairs = {m(order.amount_total)} incl. VAT. The opportunity moves to 'Proposition' ({lead.probability}%)."),
+        "takeaway": "CRM hands over to Sales: the quotation is linked to the opportunity, so nothing is typed twice.",
+        "documents": [doc("lead", lead.name, lead.id), doc("sale", order.name, order.id), doc("partner", lead.partner.name, "")],
+    }
+
+
+def s6_won(ctx):
+    lead = crm.mark_won(Lead.objects.get(pk=ctx["lead"]))
+    order = lead.sale_order
+    picking = order.pickings.first()
+    return {
+        "explanation": (f"Mehdi signs! The salesperson marks the opportunity WON, which confirms {order.name} as a sales order. "
+                        f"The warehouse immediately gets delivery {picking.name}. From here it's the normal Order-to-Cash story "
+                        f"(see the 'Sell office chairs' scenario)."),
+        "takeaway": "Won opportunity = confirmed sales order. The CRM pipeline and the sales figures stay in sync.",
+        "documents": [doc("sale", order.name, order.id), doc("picking", picking.name, picking.id)],
+    }
+
+
+def s6_summary(ctx):
+    stats = {r["stage"]: r for r in Lead.objects.values("stage").annotate(n=Count("id"))}
+    won, lost = stats.get("won", {}).get("n", 0), stats.get("lost", {}).get("n", 0)
+    rate = round(won / (won + lost) * 100) if won + lost else 0
+    open_leads = Lead.objects.filter(stage__in=crm.OPEN)
+    weighted = sum((l.weighted_revenue for l in open_leads), ZERO)
+    return {
+        "explanation": (f"The sales manager checks the pipeline: {open_leads.count()} open opportunities, worth {m(weighted)} when "
+                        f"weighted by their probability, and a win rate of {rate}% ({won} won, {lost} lost). This is how "
+                        f"companies forecast next month's sales."),
+        "takeaway": "Lead → Qualified → Proposition → Won/Lost. The pipeline predicts revenue before it happens.",
+        "documents": [doc("report", "CRM pipeline", "/crm")],
+    }
+
+
+# =============================================================================================
+# 7. Customer returns a damaged chair (after-sales)
+# =============================================================================================
+def s7_sale(ctx):
+    customer = partner("Delta Logistics")
+    order = make_sale(customer, [("CHAIR-001", 3)])
+    sales.confirm(order)
+    for p in order.pickings.all():
+        stock.validate(p)
+    inv = acc.post(sales.create_invoice(order))
+    acc.register_payment(inv)
+    ctx.update(order=order.id, invoice=inv.id)
+    return {
+        "explanation": (f"Last week {customer.name} bought 3 Ergonomic Mesh Chairs ({order.name}). They were delivered, invoiced "
+                        f"({inv.name}, {m(inv.amount_total)}) and paid. A completely normal sale."),
+        "takeaway": "This step replays a whole sale so we have something to return.",
+        "documents": [doc("sale", order.name, order.id), doc("invoice", inv.name, inv.id)],
+    }
+
+
+def s7_return(ctx):
+    order = SaleOrder.objects.get(pk=ctx["order"])
+    line = order.lines.first()
+    picking = sales.create_return(order, [(line, 1)])
+    ctx.update(picking=picking.id)
+    return {
+        "explanation": (f"The customer calls: one chair arrived with a broken armrest. Customer service agrees to take it back and "
+                        f"creates return {picking.name} (Customers → WH/Stock) linked to {order.name}, so we know exactly what "
+                        f"was sold, at what price."),
+        "takeaway": "A return is always linked to the original order. That's how the ERP knows the price and cost to reverse.",
+        "documents": [doc("picking", picking.name, picking.id)],
+    }
+
+
+def s7_receive(ctx):
+    picking = stock.validate(Picking.objects.get(pk=ctx["picking"]))
+    cost = MoveLine.objects.filter(move__picking=picking, kind=MoveLine.Kind.COGS).aggregate(s=Sum("credit"))["s"] or ZERO
+    return {
+        "explanation": (f"The chair arrives back at the warehouse and {picking.name} is validated: stock goes up by 1. Its cost "
+                        f"({m(cost)}) moves back from Cost of Goods Sold into Inventory: the exact reverse of the delivery entry."),
+        "takeaway": "Returning goods reverses the cost. (Damaged items would then be scrapped or repaired.)",
+        "documents": [doc("picking", picking.name, picking.id)],
+    }
+
+
+def s7_credit(ctx):
+    order = SaleOrder.objects.get(pk=ctx["order"])
+    note = sales.create_credit_note(order, [(order.lines.first(), 1)])
+    ctx.update(note=note.id)
+    return {
+        "explanation": (f"The accountant issues credit note {note.name} for 1 chair: {m(note.amount_total)} incl. VAT. It is the "
+                        f"opposite of an invoice: Sales go down, the VAT we owed the state goes down, and since the invoice was "
+                        f"already paid, we now OWE the customer {m(note.amount_residual)}."),
+        "takeaway": "Never delete or edit a posted invoice. You correct it with a credit note, so the audit trail stays complete.",
+        "documents": [doc("credit", note.name, note.id)],
+    }
+
+
+def s7_refund(ctx):
+    note = Move.objects.get(pk=ctx["note"])
+    payment = acc.register_payment(note)
+    return {
+        "explanation": (f"We send {m(payment.amount)} back to {note.partner.name}'s bank account. Bank goes down, and the amount "
+                        f"we owed the customer is cleared. The credit note is marked Paid."),
+        "takeaway": "A refund is a payment in the other direction: money OUT to a customer.",
+        "documents": [doc("credit", note.name, note.id), doc("entry", payment.name, payment.move_id)],
+    }
+
+
+def s7_summary(ctx):
+    inv, note = Move.objects.get(pk=ctx["invoice"]), Move.objects.get(pk=ctx["note"])
+    return {
+        "explanation": (f"Net result: we invoiced {m(inv.amount_untaxed)} and credited {m(note.amount_untaxed)}, so the sale is now "
+                        f"worth {m(inv.amount_untaxed - note.amount_untaxed)} (2 chairs). Stock, revenue, VAT and cash all reflect "
+                        f"the return, and every step is traceable from the original order."),
+        "takeaway": "After-sales in an ERP: Return (stock) + Credit note (accounting) + Refund (bank).",
+        "documents": [doc("sale", inv.sale_order.name, inv.sale_order_id)],
+    }
+
+
+# =============================================================================================
+# 8. Run the monthly payroll (HR)
+# =============================================================================================
+def s8_team(ctx):
+    team = list(Employee.objects.filter(active=True).select_related("department"))
+    gross = sum((e.wage for e in team), ZERO)
+    by_dept = {}
+    for e in team:
+        by_dept[e.department.name] = by_dept.get(e.department.name, 0) + 1
+    return {
+        "explanation": (f"It's payday. HR checks the team: {len(team)} employees in "
+                        f"{', '.join(f'{d} ({n})' for d, n in by_dept.items())}. Their contracts add up to {m(gross)} of gross "
+                        f"monthly salaries. Each employee's wage is master data, just like a product price."),
+        "takeaway": "Employees are master data for HR: job, department, contract and wage.",
+        "documents": [doc("report", "Employees", "/employees")],
+    }
+
+
+def s8_compute(ctx):
+    run = hr.create_run(timezone.localdate())
+    ctx.update(run=run.id)
+    slip = run.payslips.select_related("employee").first()
+    return {
+        "explanation": (f"HR generates payroll {run.name}: one payslip per employee. Take {slip.employee.name}: gross "
+                        f"{m(slip.gross)} − social security {m(slip.employee_social)} − income tax {m(slip.income_tax)} = net pay "
+                        f"{m(slip.net)}. On top of that, the company pays {m(slip.employer_social)} of employer charges."),
+        "takeaway": "Gross = what the contract says. Net = what lands in the employee's account. The difference goes to the state.",
+        "documents": [doc("payroll", run.name, run.id)],
+    }
+
+
+def s8_post(ctx):
+    run = hr.post_run(PayrollRun.objects.get(pk=ctx["run"]))
+    t = run.totals()
+    return {
+        "explanation": (f"The payroll is posted. The total COST for the company is {m(t['cost'])}: salaries {m(t['gross'])} + "
+                        f"employer charges {m(t['employer_social'])} (both expenses). Nothing is paid yet, so three debts appear: "
+                        f"{m(t['net'])} to employees, {m(t['employee_social'] + t['employer_social'])} to social security and "
+                        f"{m(t['income_tax'])} to the tax office."),
+        "takeaway": "Posting payroll records the cost and WHO we owe. Paying comes next.",
+        "documents": [doc("payroll", run.name, run.id), doc("entry", run.move.name, run.move_id)],
+    }
+
+
+def s8_pay(ctx):
+    run = hr.pay_salaries(PayrollRun.objects.get(pk=ctx["run"]))
+    return {
+        "explanation": (f"The bank transfers {m(run.totals()['net'])} of net salaries to the employees. 'Salaries Payable' goes back "
+                        f"to zero."),
+        "takeaway": "Employees get their net pay on payday.",
+        "documents": [doc("entry", run.payment_move.name, run.payment_move_id)],
+    }
+
+
+def s8_authorities(ctx):
+    run = hr.pay_authorities(PayrollRun.objects.get(pk=ctx["run"]))
+    t = run.totals()
+    return {
+        "explanation": (f"Later in the month the company pays what it withheld and owes: {m(t['employee_social'] + t['employer_social'])} "
+                        f"to social security and {m(t['income_tax'])} to the tax office. All payroll debts are now settled."),
+        "takeaway": "Withheld tax and contributions are NOT the company's money: it collects them for the state.",
+        "documents": [doc("entry", run.authorities_move.name, run.authorities_move_id)],
+    }
+
+
+def s8_summary(ctx):
+    t = PayrollRun.objects.get(pk=ctx["run"]).totals()
+    return {
+        "explanation": (f"For {m(t['net'])} that employees actually received, the company spent {m(t['cost'])} in total. "
+                        f"That's {(t['cost'] / t['net']):.2f}× the take-home pay. This is why an employee 'costs' much more than "
+                        f"their salary."),
+        "takeaway": "Total employer cost = gross + employer charges. Net pay is the smallest of the three numbers.",
+        "documents": [doc("payroll", "Payroll", ctx["run"]), doc("report", "Profit & Loss", "/reports/profit-loss")],
+    }
+
+
+# =============================================================================================
+# 9. Employee expense claim (HR + Accounting)
+# =============================================================================================
+def s9_submit(ctx):
+    employee = Employee.objects.filter(job_title__icontains="Sales").first() or Employee.objects.first()
+    claim = ExpenseClaim.objects.create(employee=employee, description="Hotel in Tangier – client meeting",
+                                        account=Account.objects.get(code="640000"), amount=Decimal("180"))
+    ctx.update(claim=claim.id)
+    return {
+        "explanation": (f"{employee.name} travelled to Tangier to meet a client and paid the {m(claim.amount)} hotel with their own "
+                        f"card. Back at the office, they submit an expense claim with a photo of the receipt."),
+        "takeaway": "An expense claim = an employee asks the company to pay them back.",
+        "documents": [doc("expense", claim.description, claim.id)],
+    }
+
+
+def s9_approve(ctx):
+    claim = hr.approve_expense(ExpenseClaim.objects.get(pk=ctx["claim"]))
+    return {
+        "explanation": (f"The manager checks the receipt and approves. The ERP records the cost: Travel & Fuel (expense) goes up by "
+                        f"{m(claim.amount)}, and the company now OWES {claim.employee.name} that amount (Employee Expenses Payable)."),
+        "takeaway": "Approval = the cost is real and the company owes the employee.",
+        "documents": [doc("entry", claim.move.name, claim.move_id)],
+    }
+
+
+def s9_reimburse(ctx):
+    claim = hr.reimburse_expense(ExpenseClaim.objects.get(pk=ctx["claim"]))
+    return {
+        "explanation": f"Accounting transfers {m(claim.amount)} to {claim.employee.name}. Bank goes down and the debt to the employee is cleared.",
+        "takeaway": "Reimbursing doesn't change profit again: the expense was already recorded at approval.",
+        "documents": [doc("entry", claim.payment_move.name, claim.payment_move_id)],
+    }
+
+
+# =============================================================================================
+# 10. Buy a delivery van (fixed assets & depreciation)
+# =============================================================================================
+def s10_buy(ctx):
+    a = Account.objects.get
+    vendor, _ = Partner.objects.get_or_create(name="AutoPro Vehicles", defaults=dict(
+        city="Casablanca", country="Morocco", is_vendor=True, payment_term=PaymentTerm.objects.filter(days=30).first(),
+        receivable_account=a(code="121000"), payable_account=a(code="211000")))
+    van = FixedAsset.objects.create(name=unique_name(FixedAsset, "name", "Delivery van"), account=a(code="153000"),
+                                    value=Decimal("24000"), useful_life_months=60)
+    assets.purchase(van, vendor)
+    ctx.update(asset=van.id)
+    return {
+        "explanation": (f"To deliver faster, the company buys a van for {m(van.value)} (+ VAT) from {vendor.name}. The bill "
+                        f"{van.bill.name} is posted to Vehicles, a FIXED ASSET, not to expenses: we'll use the van for about 5 years, "
+                        f"so it would be wrong to count its whole price as this month's cost."),
+        "takeaway": "Things used for years are assets (Balance Sheet), not expenses (P&L).",
+        "documents": [doc("asset", van.name, van.id), doc("bill", van.bill.name, van.bill_id)],
+    }
+
+
+def s10_pay(ctx):
+    van = FixedAsset.objects.get(pk=ctx["asset"])
+    payment = acc.register_payment(van.bill)
+    return {
+        "explanation": f"We pay the dealer {m(payment.amount)}. Cash turns into a van: our total assets barely change.",
+        "takeaway": "Buying an asset swaps one asset (cash) for another (vehicle). Profit is unchanged.",
+        "documents": [doc("entry", payment.name, payment.move_id)],
+    }
+
+
+def s10_depreciate(ctx):
+    van = FixedAsset.objects.get(pk=ctx["asset"])
+    line = assets.depreciate_next(van)
+    return {
+        "explanation": (f"At month-end, the accountant posts depreciation: {m(line.amount)} ({m(van.value)} ÷ "
+                        f"{van.useful_life_months} months). Depreciation Expense goes up, and the van's book value goes down via "
+                        f"Accumulated Depreciation. Book value is now {m(van.book_value)}."),
+        "takeaway": "Depreciation spreads the asset's cost over the years it's used: a little expense every month.",
+        "documents": [doc("asset", van.name, van.id), doc("entry", line.move.name, line.move_id)],
+    }
+
+
+def s10_year(ctx):
+    van = FixedAsset.objects.get(pk=ctx["asset"])
+    for _ in range(11):
+        assets.depreciate_next(van)
+    van = FixedAsset.objects.get(pk=van.pk)
+    return {
+        "explanation": (f"Fast-forward one year: 11 more monthly entries are posted. After 12 months the van has cost "
+                        f"{m(van.depreciated)} in depreciation and its book value is {m(van.book_value)}. In 4 more years it "
+                        f"will reach zero."),
+        "takeaway": "Book value = purchase price − accumulated depreciation. Check it on the asset's schedule.",
+        "documents": [doc("asset", van.name, van.id), doc("report", "Balance Sheet", "/reports/balance-sheet")],
+    }
+
 SCENARIOS = {s.key: s for s in [
     Scenario("sell", "Sell office chairs", "A customer buys 5 chairs: from the first phone call to the money in the bank.",
-             "Step 3 · Order-to-Cash", "ShoppingBag", "green", [
+             "Chapter 3 · Sales", "ShoppingBag", "green", [
                  Step("Customer asks for a price", "Salesperson", s1_quote, lambda c: ensure_available("CHAIR-001", 5)),
                  Step("Customer accepts: confirm the order", "Salesperson", s1_confirm),
                  Step("Warehouse ships the chairs", "Warehouse", s1_ship),
@@ -546,7 +885,7 @@ SCENARIOS = {s.key: s for s in [
                  Step("What did we really earn?", "Manager", s1_summary),
              ]),
     Scenario("buy", "Restock from a vendor", "We buy 10 chairs at a better price: RFQ, receipt, bill and payment.",
-             "Step 4 · Procure-to-Pay", "ShoppingCart", "orange", [
+             "Chapter 4 · Purchasing", "ShoppingCart", "orange", [
                  Step("Ask the vendor for a price (RFQ)", "Purchaser", s2_rfq),
                  Step("Vendor agrees: confirm the purchase", "Purchaser", s2_confirm),
                  Step("Goods arrive at the warehouse", "Warehouse", s2_receive),
@@ -555,7 +894,7 @@ SCENARIOS = {s.key: s for s in [
                  Step("Did buying cost us profit?", "Manager", s2_summary),
              ]),
     Scenario("make", "Make desks to order", "A customer orders 2 standing desks that our workshop builds from components.",
-             "Step 7 · Manufacturing", "Factory", "purple", [
+             "Chapter 6 · Manufacturing", "Factory", "purple", [
                  Step("Customer orders 2 standing desks", "Salesperson", s3_order),
                  Step("Plan production from the recipe", "Planner", s3_plan, s3_prepare_components),
                  Step("Workshop builds the desks", "Workshop", s3_produce),
@@ -564,7 +903,7 @@ SCENARIOS = {s.key: s for s in [
                  Step("How much did we make?", "Manager", s3_summary),
              ]),
     Scenario("credit", "The late payer", "A new customer pays only half, and the credit limit blocks their next order.",
-             "Step 2 + 3 · Credit control", "ShieldAlert", "pink", [
+             "Chapter 3 · Credit control", "ShieldAlert", "pink", [
                  Step("Register a new customer", "Sales manager", s4_customer),
                  Step("First order: delivered and invoiced", "Salesperson", s4_first_order, lambda c: ensure_available("CHAIR-002", 5)),
                  Step("Customer pays only half", "Accountant", s4_partial),
@@ -573,11 +912,54 @@ SCENARIOS = {s.key: s for s in [
                  Step("Try again: order confirmed", "Salesperson", s4_retry),
              ]),
     Scenario("close", "Month-end close", "Count the stock, pay rent and salaries, settle VAT and read the month's profit.",
-             "Step 6 · Accounting", "CalendarCheck", "blue", [
+             "Chapter 7 · Accounting", "CalendarCheck", "blue", [
                  Step("Count the warehouse", "Warehouse", s5_count, s5_prepare_count),
                  Step("Pay the rent", "Accountant", s5_rent),
-                 Step("Pay the salaries", "Accountant", s5_salaries),
+                 Step("Pay the team (payroll)", "HR officer", s5_salaries),
                  Step("Settle VAT with the state", "Accountant", s5_vat),
                  Step("Read the month's result", "Manager", s5_pl),
              ]),
+    Scenario("lead", "Win a new client", "A website inquiry becomes a qualified opportunity, a quotation, and a signed order.",
+             "Chapter 3 · CRM", "Target", "teal", [
+                 Step("A lead arrives from the website", "Salesperson", s6_lead),
+                 Step("Qualify the lead", "Salesperson", s6_qualify),
+                 Step("Send a proposal", "Salesperson", s6_quote),
+                 Step("Customer signs: opportunity won", "Sales manager", s6_won, lambda c: " ".join(filter(None, [ensure_available(s, n) for s, n in LEAD_ITEMS])) or None),
+                 Step("Read the sales pipeline", "Sales manager", s6_summary),
+             ]),
+    Scenario("return", "Customer returns a chair", "A paid order, a damaged item, a return, a credit note and a refund.",
+             "Chapter 3 · After-sales", "Undo2", "yellow", [
+                 Step("A completed sale", "Salesperson", s7_sale, lambda c: ensure_available("CHAIR-001", 3)),
+                 Step("Customer reports a damaged chair", "Customer service", s7_return),
+                 Step("The chair comes back to the warehouse", "Warehouse", s7_receive),
+                 Step("Issue a credit note", "Accountant", s7_credit),
+                 Step("Refund the customer", "Accountant", s7_refund),
+                 Step("What's left of the sale?", "Manager", s7_summary),
+             ]),
+    Scenario("payroll", "Run the monthly payroll", "From gross salaries to net pay, employer charges and payments to the state.",
+             "Chapter 8 · HR & Payroll", "Users", "indigo", [
+                 Step("Check the team", "HR officer", s8_team),
+                 Step("Compute the payslips", "HR officer", s8_compute),
+                 Step("Post the payroll", "Accountant", s8_post),
+                 Step("Pay the employees", "Accountant", s8_pay),
+                 Step("Pay social security and tax", "Accountant", s8_authorities),
+                 Step("What does an employee really cost?", "Manager", s8_summary),
+             ]),
+    Scenario("expense", "Employee expense claim", "An employee pays a business hotel themselves and gets reimbursed.",
+             "Chapter 8 · HR & Expenses", "Receipt", "teal", [
+                 Step("Employee submits a receipt", "Employee", s9_submit),
+                 Step("Manager approves", "Manager", s9_approve),
+                 Step("Reimburse the employee", "Accountant", s9_reimburse),
+             ]),
+    Scenario("asset", "Buy a delivery van", "A big purchase that is not an expense: fixed assets and depreciation.",
+             "Chapter 7 · Fixed assets", "Truck", "orange", [
+                 Step("Buy the van", "Manager", s10_buy),
+                 Step("Pay the dealer", "Accountant", s10_pay),
+                 Step("First month of depreciation", "Accountant", s10_depreciate),
+                 Step("One year later", "Accountant", s10_year),
+             ]),
 ]}
+
+# Learning order: follow the money from the first contact with a customer to the month-end close.
+ORDER = ["lead", "sell", "return", "credit", "buy", "make", "payroll", "expense", "asset", "close"]
+SCENARIOS = {k: SCENARIOS[k] for k in ORDER}

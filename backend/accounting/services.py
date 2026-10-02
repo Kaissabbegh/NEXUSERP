@@ -76,6 +76,7 @@ def due_date(invoice_date: Date, partner) -> Date:
 @transaction.atomic
 def register_payment(invoice: Move, amount: Decimal | None = None, journal_code: str = "BNK", date: Date | None = None) -> Payment:
     """Customer invoice: money comes in (Dr Bank / Cr Receivable).
+    Customer credit note (refund): money goes back out (Dr Receivable / Cr Bank).
     Vendor bill: money goes out (Dr Payable / Cr Bank)."""
     if not invoice.is_invoice or invoice.state != Move.State.POSTED:
         raise ValidationError("Only posted invoices and bills can be paid.")
@@ -88,14 +89,17 @@ def register_payment(invoice: Move, amount: Decimal | None = None, journal_code:
     bank = journal(journal_code)
     partner = invoice.partner
     inbound = invoice.move_type == Move.MoveType.OUT_INVOICE
-    label = f"Payment {'from' if inbound else 'to'} {partner.name} for {invoice.name}"
+    customer_side = invoice.move_type in (Move.MoveType.OUT_INVOICE, Move.MoveType.OUT_REFUND)
+    label = f"{'Refund' if invoice.move_type == Move.MoveType.OUT_REFUND else 'Payment'} {'from' if inbound else 'to'} {partner.name} for {invoice.name}"
     liquidity = LineSpec(bank.default_account, name=label, kind=MoveLine.Kind.LIQUIDITY, partner=partner)
+    account = partner.receivable_account if customer_side else partner.payable_account
+    kind = MoveLine.Kind.RECEIVABLE if customer_side else MoveLine.Kind.PAYABLE
     if inbound:
         liquidity.debit = amount
-        counterpart = LineSpec(partner.receivable_account, credit=amount, name=label, kind=MoveLine.Kind.RECEIVABLE, partner=partner)
+        counterpart = LineSpec(account, credit=amount, name=label, kind=kind, partner=partner)
     else:
         liquidity.credit = amount
-        counterpart = LineSpec(partner.payable_account, debit=amount, name=label, kind=MoveLine.Kind.PAYABLE, partner=partner)
+        counterpart = LineSpec(account, debit=amount, name=label, kind=kind, partner=partner)
 
     payment = Payment.objects.create(
         partner=partner, journal=bank, invoice=invoice, amount=amount, date=date or today(),
@@ -115,3 +119,17 @@ def register_payment(invoice: Move, amount: Decimal | None = None, journal_code:
 
 def today():
     return timezone.localdate()
+
+
+@transaction.atomic
+def apply_credit(credit_note: Move, invoice: Move) -> Decimal:
+    """Use an open credit note to reduce what the customer still owes on an invoice.
+    Both sit on the same receivable account, so no new journal entry is needed (Odoo calls this reconciliation)."""
+    amount = min(credit_note.amount_residual, invoice.amount_residual)
+    if amount <= 0:
+        return Decimal("0")
+    for doc in (credit_note, invoice):
+        doc.amount_residual -= amount
+        doc.payment_state = Move.PaymentState.PAID if doc.amount_residual <= 0 else Move.PaymentState.PARTIAL
+        doc.save(update_fields=["amount_residual", "payment_state"])
+    return amount

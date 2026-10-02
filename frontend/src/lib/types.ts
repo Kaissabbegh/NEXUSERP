@@ -141,7 +141,7 @@ export interface Payment {
 export interface Move {
   id: number
   name: string
-  move_type: 'entry' | 'out_invoice' | 'in_invoice'
+  move_type: 'entry' | 'out_invoice' | 'out_refund' | 'in_invoice'
   move_type_display: string
   journal: number
   journal_name: string
@@ -181,7 +181,7 @@ export interface StockMove {
 export interface Picking {
   id: number
   name: string
-  kind: 'incoming' | 'outgoing' | 'adjustment'
+  kind: 'incoming' | 'outgoing' | 'adjustment' | 'return'
   kind_display: string
   state: 'ready' | 'done' | 'cancel'
   partner: number | null
@@ -231,6 +231,7 @@ export interface SaleOrderLine {
   tax_amount?: Dec
   qty_delivered?: Dec
   qty_invoiced?: Dec
+  qty_to_invoice?: Dec
 }
 
 export type DeliveryStatus = 'none' | 'pending' | 'partial' | 'full'
@@ -494,4 +495,119 @@ export interface ScenarioStepResult {
   entries: Move[]
   balances: Bucket[]
   finished: boolean
+}
+/* ---------- CRM ---------- */
+
+export type LeadStage = 'new' | 'qualified' | 'proposition' | 'won' | 'lost'
+
+export interface Lead {
+  id: number
+  name: string
+  contact_name: string
+  company_name: string
+  email: string
+  phone: string
+  source: string
+  partner: number | null
+  partner_name: string | null
+  expected_revenue: Dec
+  probability: number
+  weighted_revenue: Dec
+  stage: LeadStage
+  stage_display: string
+  sale_order: number | null
+  sale_order_name: string | null
+  sale_order_state: string | null
+  lost_reason: string
+  notes: string
+  created_at: string
+  closed_at: string | null
+}
+
+/* ---------- HR ---------- */
+
+export interface Department {
+  id: number
+  name: string
+  employee_count: number
+}
+
+export interface PayslipAmounts {
+  gross: Dec
+  employee_social: Dec
+  income_tax: Dec
+  net: Dec
+  employer_social: Dec
+}
+
+export interface Employee {
+  id: number
+  name: string
+  job_title: string
+  department: number
+  department_name: string
+  email: string
+  hire_date: string
+  wage: Dec
+  active: boolean
+  preview: PayslipAmounts
+}
+
+export interface Payslip extends PayslipAmounts {
+  id: number
+  employee: number
+  employee_name: string
+  job_title: string
+}
+
+export interface PayrollRun {
+  id: number
+  name: string
+  period: string
+  state: 'draft' | 'posted' | 'paid' | 'done'
+  state_display: string
+  move: number | null
+  payment_move: number | null
+  authorities_move: number | null
+  payslips: Payslip[]
+  totals: PayslipAmounts & { cost: Dec }
+  created_at: string
+}
+
+export interface ExpenseClaim {
+  id: number
+  employee: number
+  employee_name: string
+  description: string
+  account: number
+  account_name: string
+  amount: Dec
+  date: string
+  state: 'submitted' | 'approved' | 'paid' | 'refused'
+  state_display: string
+  move: number | null
+  payment_move: number | null
+  created_at: string
+}
+
+/* ---------- Fixed assets ---------- */
+
+export interface FixedAsset {
+  id: number
+  name: string
+  account: number
+  account_name: string
+  value: Dec
+  acquisition_date: string
+  useful_life_months: number
+  vendor: number | null
+  vendor_name: string | null
+  bill: number | null
+  state: 'draft' | 'running' | 'closed'
+  state_display: string
+  monthly_depreciation: Dec
+  depreciated: Dec
+  book_value: Dec
+  schedule: { date: string; amount: Dec; book_value: Dec; posted: boolean; move: number | null }[] | null
+  created_at: string
 }

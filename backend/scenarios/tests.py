@@ -14,7 +14,7 @@ class ScenarioTests(DemoTestCase):
         return steps
 
     def test_every_scenario_plays_twice(self):
-        self.assertEqual(len(self.ok(self.client.get("/api/scenarios/"))), 5)
+        self.assertEqual(len(self.ok(self.client.get("/api/scenarios/"))), len(SCENARIOS))
         for key in SCENARIOS:
             for _ in range(2):  # replays must work even after earlier runs used up stock
                 with self.subTest(key=key):
@@ -33,3 +33,9 @@ class ScenarioTests(DemoTestCase):
         self.assertEqual(steps[3]["outcome"], "blocked")
         self.assertEqual(steps[5]["outcome"], "ok")
         self.assertIn("confirmed", steps[5]["explanation"])
+
+    def test_return_story_reverses_everything(self):
+        steps = self.play("return")
+        self.assertEqual([s["sku"] for s in steps[2]["stock"]], ["CHAIR-001"])
+        self.assertEqual(steps[3]["entries"][0]["move_type"], "out_refund")
+        self.assertEqual(steps[4]["entries"][0]["journal_code"], "BNK")

@@ -17,12 +17,13 @@ class SaleOrderLineSerializer(serializers.ModelSerializer):
     tax_name = serializers.CharField(source="tax.name", read_only=True, default=None)
     subtotal = serializers.DecimalField(max_digits=14, decimal_places=2, read_only=True)
     tax_amount = serializers.DecimalField(max_digits=14, decimal_places=2, read_only=True)
+    qty_to_invoice = serializers.DecimalField(max_digits=12, decimal_places=3, read_only=True)
 
     class Meta:
         model = SaleOrderLine
         fields = ["id", "product", "product_name", "product_sku", "product_type", "uom_name", "description",
                   "quantity", "price_unit", "discount", "tax", "tax_name", "subtotal", "tax_amount",
-                  "qty_delivered", "qty_invoiced"]
+                  "qty_delivered", "qty_invoiced", "qty_to_invoice"]
         read_only_fields = ["qty_delivered", "qty_invoiced"]
 
 

@@ -48,6 +48,7 @@ class Picking(models.Model):
         INCOMING = "incoming", "Receipt"
         OUTGOING = "outgoing", "Delivery Order"
         ADJUSTMENT = "adjustment", "Inventory Adjustment"
+        RETURN = "return", "Customer Return"
 
     class State(models.TextChoices):
         READY = "ready", "Ready"

@@ -1,31 +1,37 @@
 import { AnimatePresence, motion } from 'framer-motion'
-import { BookOpen, Boxes, Database, Factory, Play, RotateCcw, ShoppingBag, ShoppingCart, Users } from 'lucide-react'
+import { BookOpen, Boxes, Database, Factory, IdCard, Play, RotateCcw, ShoppingBag, ShoppingCart, Target, Users } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { Button, Card, PageHeader, Pill } from '../components/ui'
 import { cx } from '../lib/format'
 
-type ModuleKey = 'sales' | 'inventory' | 'accounting' | 'purchase' | 'contacts' | 'manufacturing'
+type ModuleKey = 'sales' | 'inventory' | 'accounting' | 'purchase' | 'contacts' | 'manufacturing' | 'crm' | 'hr'
 
 const MODULES: Record<ModuleKey, { label: string; icon: typeof Users; color: string; x: number; y: number; ready: boolean; to?: string; text: string; data: string[] }> = {
   sales: { label: 'Sales', icon: ShoppingBag, color: '#30d158', x: 50, y: 9, ready: true, to: '/sales',
     text: 'Quotations and sales orders. Confirming an order reserves stock and creates a delivery automatically.',
     data: ['Reads: customers, products, prices, taxes', 'Creates: delivery orders, invoices'] },
-  inventory: { label: 'Inventory', icon: Boxes, color: '#ffd60a', x: 88, y: 30, ready: true, to: '/stock',
+  inventory: { label: 'Inventory', icon: Boxes, color: '#ffd60a', x: 79, y: 21, ready: true, to: '/stock',
     text: 'Where the goods are. Every movement (receipt, delivery, adjustment) is a stock move from one location to another.',
     data: ['Reads: products, warehouses', 'Creates: stock valuation journal entries'] },
-  accounting: { label: 'Accounting', icon: BookOpen, color: '#0a84ff', x: 88, y: 72, ready: true, to: '/entries',
+  accounting: { label: 'Accounting', icon: BookOpen, color: '#0a84ff', x: 50, y: 91, ready: true, to: '/entries',
     text: 'The destination of every business event. Each operation becomes a balanced journal entry (debit = credit).',
     data: ['Reads: chart of accounts, journals, taxes', 'Produces: balance sheet, profit & loss'] },
-  purchase: { label: 'Purchasing', icon: ShoppingCart, color: '#ff9f0a', x: 12, y: 72, ready: true, to: '/purchases',
+  purchase: { label: 'Purchasing', icon: ShoppingCart, color: '#ff9f0a', x: 91, y: 50, ready: true, to: '/purchases',
     text: 'Requests for quotation and purchase orders to vendors. Receipts increase stock; vendor bills create payables.',
     data: ['Reads: vendors, products, reorder rules', 'Creates: receipts, vendor bills'] },
-  contacts: { label: 'Contacts', icon: Users, color: '#40c8e0', x: 12, y: 30, ready: true, to: '/contacts',
+  contacts: { label: 'Contacts', icon: Users, color: '#40c8e0', x: 9, y: 50, ready: true, to: '/contacts',
     text: 'Customers and vendors in one list. Their payment terms, credit limits and accounts drive every document.',
     data: ['Used by: sales, purchasing, invoicing, payments'] },
-  manufacturing: { label: 'Manufacturing', icon: Factory, color: '#bf5af2', x: 50, y: 91, ready: true, to: '/manufacturing',
+  manufacturing: { label: 'Manufacturing', icon: Factory, color: '#bf5af2', x: 79, y: 79, ready: true, to: '/manufacturing',
     text: 'Bills of materials and work orders: turn components into finished goods. Consumes and produces stock.',
     data: ['Reads: bills of materials, work centers', 'Creates: stock moves, cost entries'] },
+  crm: { label: 'CRM', icon: Target, color: '#64d2ff', x: 21, y: 21, ready: true, to: '/crm',
+    text: 'Leads and opportunities before the sale. A won opportunity becomes a confirmed sales order.',
+    data: ['Reads: contacts, products', 'Creates: customers, quotations'] },
+  hr: { label: 'HR & Payroll', icon: IdCard, color: '#5e5ce6', x: 21, y: 79, ready: true, to: '/employees',
+    text: 'Employees, departments, payroll and expense claims. Payroll posts salary costs and the debts to employees and the state.',
+    data: ['Reads: employees, contracts', 'Creates: payslips, payroll entries'] },
 }
 
 // The "one order" story: each step lights up a module and shows what happened.

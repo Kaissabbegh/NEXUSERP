@@ -8,8 +8,8 @@ import { date, money, num, qty } from '../lib/format'
 import { useFetch } from '../lib/hooks'
 import type { Picking } from '../lib/types'
 
-type K = '' | 'outgoing' | 'incoming' | 'adjustment'
-const kindTone: Record<Picking['kind'], Tone> = { outgoing: 'orange', incoming: 'green', adjustment: 'purple' }
+type K = '' | 'outgoing' | 'incoming' | 'adjustment' | 'return'
+const kindTone: Record<Picking['kind'], Tone> = { outgoing: 'orange', incoming: 'green', adjustment: 'purple', return: 'yellow' }
 
 export default function Transfers() {
   const [params, setParams] = useSearchParams()
@@ -40,7 +40,7 @@ export default function Transfers() {
       </Lesson>
 
       <div className="mb-4">
-        <Segmented<K> value={kind} onChange={(v) => setParam('kind', v || null)} options={[{ value: '', label: 'All' }, { value: 'outgoing', label: 'Deliveries' }, { value: 'incoming', label: 'Receipts' }, { value: 'adjustment', label: 'Adjustments' }]} />
+        <Segmented<K> value={kind} onChange={(v) => setParam('kind', v || null)} options={[{ value: '', label: 'All' }, { value: 'outgoing', label: 'Deliveries' }, { value: 'incoming', label: 'Receipts' }, { value: 'return', label: 'Returns' }, { value: 'adjustment', label: 'Adjustments' }]} />
       </div>
 
       {error && <ErrorBox message={error} />}
