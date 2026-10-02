@@ -1,16 +1,19 @@
 import { AnimatePresence, motion } from 'framer-motion'
 import {
-  ArrowLeftRight, BookOpen, Boxes, FileText, LayoutGrid, LogOut, Map as MapIcon, Menu, Package, ReceiptText, ShoppingBag, Users, X,
+  ArrowLeftRight, BarChart3, BookA, BookOpen, Boxes, Factory, FileText, Landmark, LayoutGrid, LogOut, Map as MapIcon, Menu,
+  Package, ReceiptText, RefreshCw, Scale, ScrollText, ShoppingBag, ShoppingCart, Users, X,
 } from 'lucide-react'
-import { useEffect, useState } from 'react'
+import { Suspense, useEffect, useState } from 'react'
 import { NavLink, Outlet, useLocation } from 'react-router-dom'
 import { useAuth } from '../lib/auth'
 import { cx } from '../lib/format'
+import { Spinner } from './ui'
 
 const NAV = [
   { section: null, items: [
     { to: '/', label: 'Dashboard', icon: LayoutGrid, color: 'bg-blue' },
     { to: '/learn', label: 'ERP Map', icon: MapIcon, color: 'bg-purple' },
+    { to: '/glossary', label: 'Glossary', icon: BookA, color: 'bg-indigo' },
   ] },
   { section: 'Master Data', items: [
     { to: '/contacts', label: 'Contacts', icon: Users, color: 'bg-teal' },
@@ -18,15 +21,29 @@ const NAV = [
     { to: '/accounts', label: 'Chart of Accounts', icon: BookOpen, color: 'bg-indigo' },
   ] },
   { section: 'Sales', items: [
-    { to: '/sales', label: 'Orders', icon: ShoppingBag, color: 'bg-green' },
+    { to: '/sales', label: 'Sales Orders', icon: ShoppingBag, color: 'bg-green' },
+  ] },
+  { section: 'Purchasing', items: [
+    { to: '/purchases', label: 'Purchase Orders', icon: ShoppingCart, color: 'bg-orange' },
+    { to: '/replenishment', label: 'Replenishment', icon: RefreshCw, color: 'bg-teal' },
   ] },
   { section: 'Inventory', items: [
     { to: '/stock', label: 'Stock', icon: Boxes, color: 'bg-yellow' },
     { to: '/transfers', label: 'Transfers', icon: ArrowLeftRight, color: 'bg-pink' },
   ] },
+  { section: 'Manufacturing', items: [
+    { to: '/boms', label: 'Bills of Materials', icon: ScrollText, color: 'bg-purple' },
+    { to: '/manufacturing', label: 'Manufacturing Orders', icon: Factory, color: 'bg-indigo' },
+  ] },
   { section: 'Accounting', items: [
-    { to: '/invoices', label: 'Invoices', icon: ReceiptText, color: 'bg-blue' },
+    { to: '/invoices', label: 'Customer Invoices', icon: ReceiptText, color: 'bg-blue' },
+    { to: '/bills', label: 'Vendor Bills', icon: ReceiptText, color: 'bg-orange' },
     { to: '/entries', label: 'Journal Entries', icon: FileText, color: 'bg-surface-3' },
+  ] },
+  { section: 'Reports', items: [
+    { to: '/reports/profit-loss', label: 'Profit & Loss', icon: BarChart3, color: 'bg-green' },
+    { to: '/reports/balance-sheet', label: 'Balance Sheet', icon: Scale, color: 'bg-blue' },
+    { to: '/reports/aged', label: 'Who Owes Whom', icon: Landmark, color: 'bg-pink' },
   ] },
 ]
 
@@ -117,7 +134,9 @@ export default function Layout() {
 
       <main className="lg:pl-[248px]">
         <motion.div key={location.pathname} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.25, ease: 'easeOut' }} className="mx-auto max-w-[1280px] px-4 py-8 sm:px-8 lg:py-10">
-          <Outlet />
+          <Suspense fallback={<Spinner />}>
+            <Outlet />
+          </Suspense>
         </motion.div>
       </main>
     </div>

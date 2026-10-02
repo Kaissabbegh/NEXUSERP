@@ -139,6 +139,11 @@ class Product(models.Model):
     sale_price = models.DecimalField(max_digits=14, decimal_places=2, default=0)
     cost = models.DecimalField(max_digits=14, decimal_places=2, default=0)
     sale_tax = models.ForeignKey(Tax, null=True, blank=True, on_delete=models.SET_NULL, related_name="+")
+    purchase_tax = models.ForeignKey(Tax, null=True, blank=True, on_delete=models.SET_NULL, related_name="+")
+    vendor = models.ForeignKey(
+        Partner, null=True, blank=True, on_delete=models.SET_NULL, related_name="supplied_products",
+        help_text="Main supplier, used by replenishment to draft RFQs.",
+    )
     barcode = models.CharField(max_length=64, blank=True)
     reorder_min = models.DecimalField(max_digits=12, decimal_places=3, default=0)
     description = models.TextField(blank=True)

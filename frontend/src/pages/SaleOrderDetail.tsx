@@ -1,7 +1,7 @@
-import { motion } from 'framer-motion'
-import { ArrowLeft, Banknote, Check, FileCheck2, FileText, Pencil, ShoppingBag, Truck, X, type LucideIcon } from 'lucide-react'
+import { ArrowLeft, Banknote, FileCheck2, FileText, Pencil, ShoppingBag, Truck, X } from 'lucide-react'
 import { useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
+import { FlowDiagram, NextStep, stepStates, type Step } from '../components/FlowDiagram'
 import { JournalEntry } from '../components/JournalEntry'
 import { OrderState, PickingState } from '../components/status'
 import { useAction } from '../components/toast'
@@ -11,15 +11,6 @@ import { cx, date, money, num, qty } from '../lib/format'
 import { useFetch } from '../lib/hooks'
 import type { Move, SaleFlow } from '../lib/types'
 
-type StepState = 'done' | 'current' | 'todo' | 'skipped'
-interface Step {
-  key: string
-  label: string
-  icon: LucideIcon
-  state: StepState
-  docs: { label: string; to?: string }[]
-  caption: string
-}
 
 function buildSteps(f: SaleFlow): Step[] {
   const o = f.order
@@ -30,15 +21,7 @@ function buildSteps(f: SaleFlow): Step[] {
   const invoiced = o.invoice_status === 'invoiced' && posted.length > 0 && f.invoices.every((i) => i.state !== 'draft')
   const paid = invoiced && posted.every((i) => i.payment_state === 'paid')
 
-  const seq: [string, boolean][] = [
-    ['quotation', true],
-    ['order', confirmed],
-    ['delivery', !hasGoods || delivered],
-    ['invoice', invoiced],
-    ['payment', paid],
-  ]
-  const firstOpen = o.state === 'cancel' ? -1 : seq.findIndex(([, done]) => !done)
-  const state = (i: number): StepState => (seq[i][1] ? 'done' : i === firstOpen ? 'current' : 'todo')
+  const state = stepStates([true, confirmed, !hasGoods || delivered, invoiced, paid], o.state === 'cancel')
 
   return [
     { key: 'quotation', label: 'Quotation', icon: FileText, state: state(0), docs: [{ label: o.name }], caption: `Created ${date(o.date_order)}` },
@@ -61,55 +44,6 @@ function buildSteps(f: SaleFlow): Step[] {
   ]
 }
 
-const stateStyle: Record<StepState, string> = {
-  done: 'bg-green text-black',
-  current: 'bg-blue text-white ring-4 ring-blue/25',
-  todo: 'bg-surface-3 text-label-3',
-  skipped: 'bg-surface-2 text-label-3',
-}
-
-function FlowDiagram({ steps }: { steps: Step[] }) {
-  return (
-    <div className="relative grid grid-cols-1 gap-4 sm:grid-cols-5 sm:gap-0">
-      {steps.map((s, i) => (
-        <div key={s.key} className="relative flex items-start gap-3 sm:flex-col sm:items-center sm:text-center">
-          {i < steps.length - 1 && (
-            <div className="absolute left-[21px] top-11 h-[calc(100%-12px)] w-[2px] bg-surface-3 sm:left-[calc(50%+26px)] sm:top-[21px] sm:h-[2px] sm:w-[calc(100%-52px)]">
-              <motion.div
-                className="size-full origin-top bg-green sm:origin-left"
-                initial={{ scale: 0 }}
-                animate={{ scale: s.state === 'done' || s.state === 'skipped' ? (steps[i + 1].state === 'todo' ? 0 : 1) : 0 }}
-                transition={{ delay: 0.15 + i * 0.15, duration: 0.4 }}
-              />
-            </div>
-          )}
-          <motion.div
-            initial={{ scale: 0.6, opacity: 0 }}
-            animate={{ scale: 1, opacity: 1 }}
-            transition={{ delay: i * 0.12, type: 'spring', damping: 14 }}
-            className={cx('relative z-10 grid size-11 shrink-0 place-items-center rounded-full transition', stateStyle[s.state])}
-          >
-            {s.state === 'done' ? <Check className="size-5" strokeWidth={3} /> : <s.icon className="size-5" />}
-            {s.state === 'current' && <span className="absolute inset-0 animate-ping rounded-full bg-blue/30" />}
-          </motion.div>
-          <div className="min-w-0 sm:mt-3">
-            <div className={cx('text-[14px] font-semibold', s.state === 'todo' && 'text-label-2', s.state === 'skipped' && 'text-label-3 line-through')}>{s.label}</div>
-            <div className="mt-0.5 text-[12px] text-label-3">{s.caption}</div>
-            <div className="mt-1.5 flex flex-wrap gap-1 sm:justify-center">
-              {s.docs.map((d) =>
-                d.to ? (
-                  <Link key={d.label} to={d.to} className="rounded-md bg-white/5 px-1.5 py-0.5 text-[12px] text-blue tnum hover:bg-white/10">{d.label}</Link>
-                ) : (
-                  <span key={d.label} className="rounded-md bg-white/5 px-1.5 py-0.5 text-[12px] tnum">{d.label}</span>
-                ),
-              )}
-            </div>
-          </div>
-        </div>
-      ))}
-    </div>
-  )
-}
 
 function explain(m: Move): string {
   if (m.journal_name === 'Inventory Valuation')
@@ -187,16 +121,12 @@ export default function SaleOrderDetail() {
       <Card className="mb-4">
         <FlowDiagram steps={steps} />
         {nextAction && (
-          <motion.div layout className="mt-6 flex flex-wrap items-center gap-3 rounded-xl border border-blue/30 bg-blue/[0.08] p-4">
-            <div className="min-w-[200px] flex-1">
-              <div className="text-[12px] font-semibold uppercase tracking-wider text-blue">Next step · {current?.label}</div>
-              <div className="mt-0.5 text-[14px] text-label-2">{nextAction.hint}</div>
-            </div>
+          <NextStep stepLabel={current?.label} hint={nextAction.hint}>
             {'pay' in nextAction && (
               <input className="field !w-36 tnum" type="number" min={0} step="0.01" placeholder={num(openInvoice?.amount_residual).toFixed(2)} value={payAmount} onChange={(e) => setPayAmount(e.target.value)} />
             )}
             <Button onClick={nextAction.run} loading={busy === 'next'}>{nextAction.label}</Button>
-          </motion.div>
+          </NextStep>
         )}
         {o.state === 'cancel' && <p className="mt-6 text-center text-[14px] text-label-2">This order was cancelled. Its delivery and draft invoices were cancelled too.</p>}
       </Card>

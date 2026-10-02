@@ -93,6 +93,8 @@ class Move(models.Model):
     payment_state = models.CharField(max_length=16, choices=PaymentState.choices, default=PaymentState.NOT_PAID)
     sale_order = models.ForeignKey("sales.SaleOrder", null=True, blank=True, on_delete=models.PROTECT, related_name="invoices")
     picking = models.ForeignKey("inventory.Picking", null=True, blank=True, on_delete=models.PROTECT, related_name="valuation_moves")
+    purchase_order = models.ForeignKey("purchase.PurchaseOrder", null=True, blank=True, on_delete=models.PROTECT, related_name="bills")
+    production = models.ForeignKey("mrp.ManufacturingOrder", null=True, blank=True, on_delete=models.PROTECT, related_name="valuation_moves")
     amount_untaxed = models.DecimalField(max_digits=14, decimal_places=2, default=0)
     amount_tax = models.DecimalField(max_digits=14, decimal_places=2, default=0)
     amount_total = models.DecimalField(max_digits=14, decimal_places=2, default=0)
@@ -147,11 +149,16 @@ class Payment(models.Model):
         DRAFT = "draft", "Draft"
         POSTED = "posted", "Posted"
 
+    class Type(models.TextChoices):
+        INBOUND = "inbound", "Received from customer"
+        OUTBOUND = "outbound", "Sent to vendor"
+
     name = models.CharField(max_length=32, default="/")
     partner = models.ForeignKey("masterdata.Partner", on_delete=models.PROTECT, related_name="payments")
     journal = models.ForeignKey(Journal, on_delete=models.PROTECT, related_name="payments")
     invoice = models.ForeignKey(Move, null=True, blank=True, on_delete=models.PROTECT, related_name="payments")
     move = models.OneToOneField(Move, null=True, blank=True, on_delete=models.PROTECT, related_name="payment_of")
+    payment_type = models.CharField(max_length=16, choices=Type.choices, default=Type.INBOUND)
     amount = models.DecimalField(max_digits=14, decimal_places=2)
     date = models.DateField(default=timezone.localdate)
     state = models.CharField(max_length=16, choices=State.choices, default=State.DRAFT)

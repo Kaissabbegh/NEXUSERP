@@ -69,6 +69,7 @@ class ProductSerializer(serializers.ModelSerializer):
     category_name = serializers.CharField(source="category.name", read_only=True)
     uom_name = serializers.CharField(source="uom.name", read_only=True)
     sale_tax_name = serializers.CharField(source="sale_tax.name", read_only=True, default=None)
+    vendor_name = serializers.CharField(source="vendor.name", read_only=True, default=None)
     on_hand = serializers.SerializerMethodField()
     reserved = serializers.SerializerMethodField()
     margin = serializers.SerializerMethodField()
@@ -77,7 +78,7 @@ class ProductSerializer(serializers.ModelSerializer):
         model = Product
         fields = [
             "id", "sku", "name", "product_type", "category", "category_name", "uom", "uom_name", "sale_price",
-            "cost", "sale_tax", "sale_tax_name", "barcode", "reorder_min", "description", "active",
+            "cost", "sale_tax", "sale_tax_name", "purchase_tax", "vendor", "vendor_name", "barcode", "reorder_min", "description", "active",
             "on_hand", "reserved", "margin",
         ]
 

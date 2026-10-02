@@ -104,19 +104,21 @@ export function Segmented<T extends string>({
   options: { value: T; label: string }[]
 }) {
   return (
-    <div className="relative inline-flex rounded-[10px] bg-surface-2 p-0.5">
-      {options.map((o) => (
-        <button
-          key={o.value}
-          onClick={() => onChange(o.value)}
-          className={cx('relative z-10 rounded-[8px] px-3.5 py-1 text-[13px] font-medium transition', value === o.value ? 'text-label' : 'text-label-2 hover:text-label')}
-        >
-          {value === o.value && (
-            <motion.span layoutId={`seg-${options.map((x) => x.value).join()}`} className="absolute inset-0 -z-10 rounded-[8px] bg-surface-3 shadow" transition={{ type: 'spring', bounce: 0.2, duration: 0.4 }} />
-          )}
-          {o.label}
-        </button>
-      ))}
+    <div className="max-w-full overflow-x-auto">
+      <div className="relative inline-flex rounded-[10px] bg-surface-2 p-0.5">
+        {options.map((o) => (
+          <button
+            key={o.value}
+            onClick={() => onChange(o.value)}
+            className={cx('relative z-10 whitespace-nowrap rounded-[8px] px-3.5 py-1 text-[13px] font-medium transition', value === o.value ? 'text-label' : 'text-label-2 hover:text-label')}
+          >
+            {value === o.value && (
+              <motion.span layoutId={`seg-${options.map((x) => x.value).join()}`} className="absolute inset-0 -z-10 rounded-[8px] bg-surface-3 shadow" transition={{ type: 'spring', bounce: 0.2, duration: 0.4 }} />
+            )}
+            {o.label}
+          </button>
+        ))}
+      </div>
     </div>
   )
 }

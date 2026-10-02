@@ -5,7 +5,7 @@ import { useAction } from '../components/toast'
 import { patch, post } from '../lib/api'
 import { cx, money, num, qty } from '../lib/format'
 import { useDebounced, useFetch } from '../lib/hooks'
-import type { Product, ProductCategory, ProductType, Tax, Uom } from '../lib/types'
+import type { Partner, Product, ProductCategory, ProductType, Tax, Uom } from '../lib/types'
 
 const typeMeta: Record<ProductType, { label: string; tone: Tone; hint: string }> = {
   storable: { label: 'Storable', tone: 'blue', hint: 'Quantity tracked in the warehouse; valued in the Inventory account.' },
@@ -21,7 +21,10 @@ export default function Products() {
   const q = useDebounced(search)
   const { data, error, loading, reload } = useFetch<Product[]>(`/products/?type=${filter === 'all' ? '' : filter}&search=${encodeURIComponent(q)}`)
   const categories = useFetch<ProductCategory[]>('/product-categories/').data ?? []
-  const taxes = (useFetch<Tax[]>('/taxes/').data ?? []).filter((t) => t.scope === 'sale')
+  const allTaxes = useFetch<Tax[]>('/taxes/').data ?? []
+  const taxes = allTaxes.filter((t) => t.scope === 'sale')
+  const purchaseTaxes = allTaxes.filter((t) => t.scope === 'purchase')
+  const vendors = useFetch<Partner[]>('/partners/?role=vendor').data ?? []
   const uoms = useFetch<Uom[]>('/uoms/').data ?? []
   const [editing, setEditing] = useState<Partial<Product> | null>(null)
   const { run, busy } = useAction()
@@ -30,7 +33,7 @@ export default function Products() {
   const category = categories.find((c) => c.id === editing?.category)
 
   const openNew = () =>
-    setEditing({ sku: '', name: '', product_type: 'storable', category: categories[0]?.id, uom: uoms[0]?.id, sale_price: '0', cost: '0', sale_tax: taxes[0]?.id ?? null, reorder_min: '0', barcode: '', description: '' })
+    setEditing({ sku: '', name: '', product_type: 'storable', category: categories[0]?.id, uom: uoms[0]?.id, sale_price: '0', cost: '0', sale_tax: taxes[0]?.id ?? null, purchase_tax: purchaseTaxes[0]?.id ?? null, vendor: null, reorder_min: '0', barcode: '', description: '' })
 
   const save = async () => {
     if (!editing) return
@@ -149,6 +152,22 @@ export default function Products() {
             {margin !== null && (
               <div className="rounded-xl bg-green/10 px-3.5 py-2.5 text-[14px] text-green">
                 Gross margin: <b className="tnum">{money(num(editing.sale_price) - num(editing.cost))}</b> per unit ({margin.toFixed(1)}%)
+              </div>
+            )}
+            {editing.product_type !== 'service' && (
+              <div className="grid gap-4 sm:grid-cols-2">
+                <Field label="Main vendor" hint="Used by Replenishment to draft RFQs.">
+                  <select className="field" value={editing.vendor ?? ''} onChange={(e) => set('vendor', e.target.value ? Number(e.target.value) : null)}>
+                    <option value="">None</option>
+                    {vendors.map((v) => <option key={v.id} value={v.id}>{v.name}</option>)}
+                  </select>
+                </Field>
+                <Field label="Purchase tax" hint="VAT we pay the vendor (reclaimable).">
+                  <select className="field" value={editing.purchase_tax ?? ''} onChange={(e) => set('purchase_tax', e.target.value ? Number(e.target.value) : null)}>
+                    <option value="">No tax</option>
+                    {purchaseTaxes.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+                  </select>
+                </Field>
               </div>
             )}
             {editing.product_type === 'storable' && (

@@ -11,13 +11,16 @@ six months of sales history.
 
 | Area | Screens | Lesson |
 |---|---|---|
-| Overview | Dashboard, **ERP Map** (animated "one order flows through every module") | Step 1 |
-| Master data | Contacts, Products, Chart of Accounts (live balances + accounting equation) | Step 2 |
-| Sales | Quotations → Sales Orders with an **Order-to-Cash flow diagram** | Step 3 |
-| Inventory | Stock (on hand / reserved / available), Transfers | Step 5 |
-| Accounting | Customer invoices, payments, journal entries (double-entry, perpetual inventory) | Step 6 |
+| Overview | Dashboard (selling + buying pipelines), **ERP Map**, **Glossary** (63 terms) | Step 1 |
+| Master data | Contacts, Products (vendor, taxes, margin), Chart of Accounts | Step 2 |
+| Sales | Quotations → Sales Orders with an **Order-to-Cash flow diagram**, credit limits | Step 3 |
+| Purchasing | RFQs → Purchase Orders with a **Procure-to-Pay flow diagram**, three-way match, **Replenishment** | Step 4 |
+| Inventory | Stock (on hand / reserved / available / incoming), physical **counts**, Transfers, average cost (AVCO) | Step 5 |
+| Accounting | Customer invoices, vendor bills, payments in/out, manual entries (rent, salaries…), journal entries | Step 6 |
+| Manufacturing | Bills of Materials, Manufacturing Orders (consume components, produce finished goods) | Step 7 |
+| Reports | **Profit & Loss**, **Balance Sheet**, **Who Owes Whom** (aged receivables / payables) | Step 6 |
 
-Coming next: Purchasing (Procure-to-Pay), Manufacturing, reports.
+Coming next: HR & payroll, multi-warehouse, PDF documents.
 
 ## Stack
 
@@ -29,9 +32,11 @@ Coming next: Purchasing (Procure-to-Pay), Manufacturing, reports.
 backend/
   config/       settings, urls
   masterdata/   partners, products, categories, taxes, payment terms, sequences (+ seed_demo command)
-  accounting/   chart of accounts, journals, journal entries/invoices, payments
+  accounting/   chart of accounts, journals, journal entries/invoices/bills, payments, reports.py
   inventory/    warehouses, locations, transfers, stock moves
   sales/        quotations / sales orders and the Order-to-Cash services
+  purchase/     RFQs / purchase orders, vendor bills, replenishment (Procure-to-Pay)
+  mrp/          bills of materials and manufacturing orders
   accounts/     auth "me" endpoint and dashboard
 frontend/src/
   pages/        one file per screen
@@ -40,6 +45,13 @@ frontend/src/
 ```
 
 Business rules live in each app's `services.py` (e.g. `sales/services.py: confirm, create_invoice`).
+
+Run the backend tests (they seed a fresh demo company in a throwaway database):
+
+```powershell
+cd backend
+.\.venv\Scripts\python manage.py test
+```
 
 ## Setup (Windows)
 
@@ -56,6 +68,7 @@ python -m venv .venv
 copy .env.example .env        # then edit DB_PASSWORD and DJANGO_SECRET_KEY
 .\.venv\Scripts\python manage.py migrate
 .\.venv\Scripts\python manage.py seed_demo   # creates the demo company and user "demo"
+                                             # (re-run after pulling updates: it only adds what is missing)
 .\.venv\Scripts\python manage.py runserver
 
 # 3. Frontend (new terminal)
@@ -76,7 +89,13 @@ On the original dev machine, `scripts/dev.ps1` starts the local Postgres cluster
 | Opening stock | STJ | 110100 Inventory | 301000 Capital |
 | Delivery validated | STJ | 500000 Cost of Goods Sold | 110100 Inventory |
 | Invoice posted | INV | 121000 Receivable | 400000 Sales + 251000 VAT Payable |
-| Payment registered | BNK | 101000 Bank | 121000 Receivable |
+| Payment received | BNK | 101000 Bank | 121000 Receivable |
+| Receipt validated | STJ | 110100 Inventory | 110200 Stock Interim |
+| Vendor bill posted | BILL | 110200 Stock Interim + 131000 VAT Receivable | 211000 Payable |
+| Payment sent | BNK | 211000 Payable | 101000 Bank |
+| Manufacturing order produced | STJ | 110100 Inventory (finished good) | 110100 Inventory (components) |
+| Stock count shortage | STJ | 630000 Inventory Differences | 110100 Inventory |
+| Rent / salaries (manual) | MISC | 610000 / 620000 Expense | 101000 Bank |
 
 Accounts come from master data: product category (income, COGS, stock valuation), tax (VAT account),
 contact (receivable), journal (bank account).

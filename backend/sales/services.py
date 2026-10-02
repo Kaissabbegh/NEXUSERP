@@ -49,7 +49,7 @@ def confirm(order: SaleOrder) -> SaleOrder:
     order.confirmed_at = timezone.now()
     order.save(update_fields=["state", "confirmed_at"])
 
-    to_deliver = [(l.product, l.quantity, l) for l in lines if l.product.is_deliverable]
+    to_deliver = [{"product": l.product, "quantity": l.quantity, "sale_line": l} for l in lines if l.product.is_deliverable]
     if to_deliver:
         stock.create_picking(Picking.Kind.OUTGOING, to_deliver, partner=partner, origin=order.name, sale_order=order)
     return order

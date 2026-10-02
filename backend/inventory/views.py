@@ -2,6 +2,7 @@ from decimal import Decimal
 
 from rest_framework import viewsets
 from rest_framework.decorators import action, api_view
+from rest_framework.exceptions import ValidationError
 from rest_framework.response import Response
 
 from masterdata.models import Product
@@ -43,14 +44,14 @@ class PickingViewSet(viewsets.ReadOnlyModelViewSet):
 def stock_overview(request):
     """On-hand, reserved and value per storable product."""
     products = Product.objects.filter(product_type=Product.Type.STORABLE).select_related("uom", "category")
-    on_hand, reserved = services.on_hand_map(), services.reserved_map()
+    on_hand, reserved, incoming = services.on_hand_map(), services.reserved_map(), services.incoming_map()
     rows = []
     for p in products:
         qty = on_hand.get(p.id, Decimal("0"))
         res = reserved.get(p.id, Decimal("0"))
         rows.append({
             "id": p.id, "sku": p.sku, "name": p.name, "category": p.category.name, "uom": p.uom.name,
-            "on_hand": qty, "reserved": res, "available": qty - res, "cost": p.cost,
+            "on_hand": qty, "reserved": res, "available": qty - res, "incoming": incoming.get(p.id, Decimal("0")), "cost": p.cost,
             "value": (qty * p.cost).quantize(Decimal("0.01")), "reorder_min": p.reorder_min,
             "low": p.reorder_min > 0 and qty - res <= p.reorder_min,
         })
@@ -62,3 +63,17 @@ def product_moves(request, product_id: int):
     moves = StockMove.objects.filter(product_id=product_id, state="done").select_related("product__uom") \
         .order_by("-date")[:50]
     return Response(StockMoveSerializer(moves, many=True).data)
+
+
+@api_view(["POST"])
+def adjust_stock(request):
+    """Record a physical count; the difference is posted as an inventory adjustment."""
+    try:
+        product = Product.objects.get(pk=request.data.get("product"))
+        counted = Decimal(str(request.data.get("counted")))
+    except (Product.DoesNotExist, ArithmeticError, ValueError):
+        raise ValidationError("Provide a product and the counted quantity.")
+    picking = services.adjust(product, counted, request.data.get("reason", ""))
+    if picking is None:
+        return Response({"detail": "No difference: stock already matches the count."})
+    return Response(PickingSerializer(picking).data, status=201)

@@ -44,12 +44,15 @@ class MoveListSerializer(serializers.ModelSerializer):
     journal_name = serializers.CharField(source="journal.name", read_only=True)
     move_type_display = serializers.CharField(source="get_move_type_display", read_only=True)
     sale_order_name = serializers.CharField(source="sale_order.name", read_only=True, default=None)
+    purchase_order_name = serializers.CharField(source="purchase_order.name", read_only=True, default=None)
+    journal_code = serializers.CharField(source="journal.code", read_only=True)
 
     class Meta:
         model = Move
-        fields = ["id", "name", "move_type", "move_type_display", "journal", "journal_name", "partner",
+        fields = ["id", "name", "move_type", "move_type_display", "journal", "journal_name", "journal_code", "partner",
                   "partner_name", "date", "invoice_date_due", "ref", "state", "payment_state", "sale_order",
-                  "sale_order_name", "amount_untaxed", "amount_tax", "amount_total", "amount_residual", "created_at"]
+                  "sale_order_name", "purchase_order", "purchase_order_name", "amount_untaxed", "amount_tax",
+                  "amount_total", "amount_residual", "created_at"]
 
 
 class MoveSerializer(MoveListSerializer):
@@ -71,4 +74,4 @@ class PaymentSerializer(serializers.ModelSerializer):
     class Meta:
         model = Payment
         fields = ["id", "name", "partner", "partner_name", "journal", "journal_name", "invoice", "invoice_name",
-                  "move", "amount", "date", "state"]
+                  "move", "payment_type", "amount", "date", "state"]

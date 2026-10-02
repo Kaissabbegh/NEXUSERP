@@ -10,7 +10,7 @@ from decimal import Decimal as D
 
 from django.conf import settings
 from django.contrib.auth import get_user_model
-from django.core.management.base import BaseCommand, CommandError
+from django.core.management.base import BaseCommand
 from django.db import transaction
 from django.utils import timezone
 
@@ -19,6 +19,10 @@ from accounting.models import Account, Journal, Move
 from inventory import services as stock
 from inventory.models import Location, Picking, Warehouse
 from masterdata.models import Partner, PaymentTerm, Product, ProductCategory, Tax, UnitOfMeasure
+from mrp import services as mrp
+from mrp.models import BillOfMaterials, BomLine, ManufacturingOrder
+from purchase import services as purchase
+from purchase.models import PurchaseOrder, PurchaseOrderLine
 from sales import services as sales
 from sales.models import SaleOrder, SaleOrderLine
 
@@ -76,20 +80,24 @@ VENDORS = [
 class Command(BaseCommand):
     help = "Seed the Nexus Furniture demo company."
 
-    def add_arguments(self, parser):
-        parser.add_argument("--force", action="store_true", help="Seed even if data already exists.")
-
-    def handle(self, *args, force=False, **opts):
-        if Account.objects.exists() and not force:
-            raise CommandError("Database already has data. Use --force or reset the database first.")
+    def handle(self, *args, **opts):
+        fresh = not Account.objects.exists()
         with transaction.atomic():
-            self.chart_of_accounts()
-            self.masterdata()
-            self.warehouse()
-            self.opening_stock()
-            self.history()
+            if fresh:
+                self.chart_of_accounts()
+                self.masterdata()
+                self.warehouse()
+                self.opening_stock()
+                self.history()
+            # Later lessons (purchasing, manufacturing, expenses). Each step is skipped if already loaded,
+            # so this also upgrades a database seeded by an earlier version.
+            self.purchasing_setup()
+            self.manufacturing_setup()
+            self.owner_and_expenses()
+            self.purchase_history()
+            self.manufacturing_history()
         self.demo_user()
-        self.stdout.write(self.style.SUCCESS("Nexus Furniture demo data loaded."))
+        self.stdout.write(self.style.SUCCESS("Nexus Furniture demo data " + ("loaded." if fresh else "upgraded.")))
 
     # --- Step 2: master data --------------------------------------------------------------
     def chart_of_accounts(self):
@@ -150,8 +158,13 @@ class Command(BaseCommand):
         Location.objects.create(name="Inventory adjustment", usage=Location.Usage.INVENTORY)
 
     def opening_stock(self):
-        lines = [(Product.objects.get(sku=sku), D(qty)) for sku, *_, qty in PRODUCTS if qty]
-        picking = stock.create_picking(Picking.Kind.ADJUSTMENT, lines, origin="Opening stock")
+        lines = [{"product": Product.objects.get(sku=sku), "quantity": D(qty)} for sku, *_, qty in PRODUCTS if qty]
+        self._opening(lines)
+
+    def _opening(self, lines):
+        """Opening stock is funded by the owners (equity), not an expense."""
+        picking = stock.create_picking(Picking.Kind.ADJUSTMENT, lines, origin="Opening stock",
+                                       counterpart_account=Account.objects.get(code="301000"))
         stock.validate(picking)
 
     # --- Step 3: a few months of Order-to-Cash history ---------------------------------------
@@ -200,6 +213,121 @@ class Command(BaseCommand):
             elif stage == "partial":
                 acc.register_payment(Move.objects.get(pk=invoice.pk), (invoice.amount_total / 2).quantize(D("0.01")))
 
+    # --- Step 4: purchasing ----------------------------------------------------------------
+    def purchasing_setup(self):
+        Account.objects.get_or_create(code="630000", defaults=dict(
+            name="Inventory Differences", account_type=T.EXPENSE,
+            description="Stock lost, broken or found during physical counts."))
+        Location.objects.get_or_create(usage=Location.Usage.PRODUCTION, defaults={"name": "Production"})
+        vat_purchase = Tax.objects.filter(scope=Tax.Scope.PURCHASE).order_by("rate").last()
+        vendors = {p.name: p for p in Partner.objects.filter(is_vendor=True)}
+        wood, steel = vendors.get("Woodcraft Supplies"), vendors.get("SteelForm Industries")
+        for p in Product.objects.exclude(product_type=Product.Type.SERVICE).select_related("category"):
+            changed = []
+            if p.purchase_tax_id is None:
+                p.purchase_tax, changed = vat_purchase, changed + ["purchase_tax"]
+            if p.vendor_id is None:
+                p.vendor = steel if p.category.name in ("Chairs", "Storage") else wood
+                changed.append("vendor")
+            if changed:
+                p.save(update_fields=changed)
+
+    # --- Step 7: manufacturing -------------------------------------------------------------
+    def manufacturing_setup(self):
+        if ProductCategory.objects.filter(name="Components").exists():
+            return
+        a = Account.objects.get
+        cat = ProductCategory.objects.create(name="Components", income_account=a(code="400000"),
+                                             expense_account=a(code="500000"), stock_valuation_account=a(code="110100"))
+        unit = UnitOfMeasure.objects.get(name="Unit")
+        vat_purchase = Tax.objects.filter(scope=Tax.Scope.PURCHASE).order_by("rate").last()
+        wood = Partner.objects.get(name="Woodcraft Supplies")
+        steel = Partner.objects.get(name="SteelForm Industries")
+        comps = {}
+        for sku, name, cost, vendor, rmin, qty in [
+            ("COMP-001", "Oak Desktop Panel", 270, wood, 4, 8),
+            ("COMP-002", "Steel Desk Frame", 180, steel, 4, 6),
+            ("COMP-003", "Hardware Kit (screws, brackets)", 20, steel, 10, 30),
+            ("COMP-004", "Electric Lift Column", 140, steel, 4, 3),
+        ]:
+            comps[sku] = Product.objects.create(
+                sku=sku, name=name, category=cat, product_type=Product.Type.STORABLE, cost=cost, sale_price=0,
+                uom=unit, purchase_tax=vat_purchase, vendor=vendor, reorder_min=rmin,
+                description="Component used in manufacturing; not sold on its own.",
+            )
+        self._opening([{"product": comps[s], "quantity": D(q)} for s, q in
+                       [("COMP-001", 8), ("COMP-002", 6), ("COMP-003", 30), ("COMP-004", 3)]])
+        for sku, recipe in [
+            ("DESK-001", [("COMP-001", 1), ("COMP-002", 1), ("COMP-003", 1)]),
+            ("DESK-002", [("COMP-001", 1), ("COMP-002", 1), ("COMP-004", 2), ("COMP-003", 2)]),
+        ]:
+            bom = BillOfMaterials.objects.create(product=Product.objects.get(sku=sku), quantity=1, code=f"BOM-{sku}")
+            for comp, qty in recipe:
+                BomLine.objects.create(bom=bom, component=comps[comp], quantity=qty)
+
+    # --- Step 6: money in from owners, money out for running costs ---------------------------
+    def owner_and_expenses(self):
+        if Move.objects.filter(journal__code="MISC").exists():
+            return
+        a = Account.objects.get
+        today = timezone.localdate()
+        acc.create_entry("MISC", [
+            acc.LineSpec(a(code="101000"), debit=D(20000), name="Owner cash investment"),
+            acc.LineSpec(a(code="301000"), credit=D(20000), name="Owner cash investment"),
+        ], ref="Capital injection", date=(today - timedelta(days=180)).replace(day=1))
+        for months_ago in (3, 2, 1):
+            day = (today - timedelta(days=30 * months_ago)).replace(day=28)
+            for code, amount, label in [("610000", 1500, "Warehouse rent"), ("620000", 4200, "Salaries")]:
+                acc.create_entry("MISC", [
+                    acc.LineSpec(a(code=code), debit=D(amount), name=f"{label} {day:%B}"),
+                    acc.LineSpec(a(code="101000"), credit=D(amount), name=f"{label} {day:%B}"),
+                ], ref=f"{label} {day:%b %Y}", date=day)
+
+    def purchase_history(self):
+        if PurchaseOrder.objects.exists():
+            return
+        today = timezone.localdate()
+        p = {x.sku: x for x in Product.objects.all()}
+        vendors = {v.name: v for v in Partner.objects.filter(is_vendor=True)}
+        scenarios = [
+            # vendor, lines (sku, qty, price), days ago, stage
+            ("Woodcraft Supplies", [("COMP-001", 6, 265)], 70, "paid"),
+            ("SteelForm Industries", [("CHAIR-001", 10, 158)], 40, "billed"),
+            ("SteelForm Industries", [("COMP-002", 6, 182), ("COMP-004", 4, 145)], 5, "confirmed"),
+            ("Woodcraft Supplies", [("STOR-002", 4, 200), ("DESK-003", 6, 125)], 0, "rfq"),
+        ]
+        for vendor_name, items, days_ago, stage in scenarios:
+            vendor, day = vendors[vendor_name], today - timedelta(days=days_ago)
+            order = PurchaseOrder.objects.create(name=purchase.new_order_name(), partner=vendor, date_order=day,
+                                                 date_planned=day + timedelta(days=7), payment_term=vendor.payment_term)
+            for sku, qty, price in items:
+                PurchaseOrderLine.objects.create(order=order, product=p[sku], description=p[sku].name, quantity=qty,
+                                                 price_unit=price, tax=p[sku].purchase_tax)
+            order.compute_amounts()
+            if stage == "rfq":
+                continue
+            purchase.confirm(order)
+            if stage == "confirmed":
+                continue
+            for picking in order.pickings.all():
+                stock.validate(picking)
+            bill = purchase.create_bill(order)
+            bill.date = day + timedelta(days=3)
+            bill.invoice_date_due = acc.due_date(bill.date, vendor)
+            bill.save(update_fields=["date", "invoice_date_due"])
+            acc.post(bill)
+            if stage == "paid":
+                acc.register_payment(bill, date=bill.invoice_date_due)
+
+    def manufacturing_history(self):
+        if ManufacturingOrder.objects.exists():
+            return
+        desk = BillOfMaterials.objects.get(product__sku="DESK-001")
+        done = mrp.create(desk, D(2), origin="Restock showroom")
+        mrp.confirm(done)
+        mrp.produce(done)
+        standing = BillOfMaterials.objects.get(product__sku="DESK-002")
+        mrp.confirm(mrp.create(standing, D(1), origin="Customer special order"))
     def demo_user(self):
         User = get_user_model()
         if User.objects.filter(username="demo").exists():

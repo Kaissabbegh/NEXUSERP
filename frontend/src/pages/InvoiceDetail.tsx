@@ -21,6 +21,8 @@ export default function InvoiceDetail() {
   if (error) return <ErrorBox message={error} />
   if (!inv) return null
 
+  const bill = inv.move_type === 'in_invoice'
+  const word = bill ? 'Bill' : 'Invoice'
   const productLines = (inv.lines ?? []).filter((l) => l.kind === 'product')
   const paidPct = num(inv.amount_total) ? ((num(inv.amount_total) - num(inv.amount_residual)) / num(inv.amount_total)) * 100 : 0
 
@@ -33,38 +35,49 @@ export default function InvoiceDetail() {
 
   return (
     <>
-      <Link to="/invoices" className="mb-3 inline-flex items-center gap-1 text-[14px] text-blue">
-        <ArrowLeft className="size-4" /> Invoices
+      <Link to={bill ? '/bills' : '/invoices'} className="mb-3 inline-flex items-center gap-1 text-[14px] text-blue">
+        <ArrowLeft className="size-4" /> {bill ? 'Vendor Bills' : 'Invoices'}
       </Link>
       <PageHeader
-        title={inv.state === 'draft' ? 'Draft Invoice' : inv.name}
+        title={inv.state === 'draft' ? `Draft ${word}` : inv.name}
         subtitle={<span className="flex flex-wrap items-center gap-2">{inv.partner_name} <MoveState move={inv} /></span>}
         actions={
           inv.state === 'draft' ? (
-            <Button loading={busy === 'post'} onClick={() => act('post', () => post(`/moves/${inv.id}/post/`), 'Invoice posted')}>Confirm Invoice</Button>
+            <Button loading={busy === 'post'} onClick={() => act('post', () => post(`/moves/${inv.id}/post/`), `${word} posted`)}>Confirm {word}</Button>
           ) : inv.state === 'posted' && num(inv.amount_residual) > 0 ? (
             <div className="flex items-center gap-2">
               <input className="field !w-36 !py-1.5 tnum" type="number" min={0} step="0.01" placeholder={num(inv.amount_residual).toFixed(2)} value={amount} onChange={(e) => setAmount(e.target.value)} />
-              <Button variant="success" loading={busy === 'pay'} onClick={() => act('pay', () => post(`/moves/${inv.id}/register-payment/`, { amount: amount || null }), 'Payment registered')}>Register Payment</Button>
+              <Button variant="success" loading={busy === 'pay'} onClick={() => act('pay', () => post(`/moves/${inv.id}/register-payment/`, { amount: amount || null }), bill ? 'Payment sent' : 'Payment registered')}>{bill ? 'Pay Vendor' : 'Register Payment'}</Button>
             </div>
           ) : null
         }
       />
 
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-[1fr_1fr]">
-        {/* The invoice as the customer sees it */}
+        {/* The document as printed */}
         <Card className="bg-gradient-to-b from-surface to-surface-2/40">
           <div className="flex flex-wrap justify-between gap-4 border-b border-line pb-5">
             <div>
-              <div className="flex items-center gap-2"><img src="/favicon.svg" alt="" className="size-6" /><span className="font-semibold">Nexus Furniture</span></div>
-              <div className="mt-4 text-[12px] uppercase tracking-wider text-label-3">Bill to</div>
-              <div className="font-medium">{inv.partner_name}</div>
+              {bill ? (
+                <>
+                  <div className="font-semibold">{inv.partner_name}</div>
+                  <div className="mt-4 text-[12px] uppercase tracking-wider text-label-3">Bill to</div>
+                  <div className="flex items-center gap-2"><img src="/favicon.svg" alt="" className="size-5" /><span className="font-medium">Nexus Furniture</span></div>
+                </>
+              ) : (
+                <>
+                  <div className="flex items-center gap-2"><img src="/favicon.svg" alt="" className="size-6" /><span className="font-semibold">Nexus Furniture</span></div>
+                  <div className="mt-4 text-[12px] uppercase tracking-wider text-label-3">Bill to</div>
+                  <div className="font-medium">{inv.partner_name}</div>
+                </>
+              )}
             </div>
             <dl className="space-y-1 text-right text-[14px]">
-              <div><dt className="inline text-label-3">Invoice </dt><dd className="inline font-medium tnum">{inv.state === 'draft' ? '—' : inv.name}</dd></div>
+              <div><dt className="inline text-label-3">{word} </dt><dd className="inline font-medium tnum">{inv.state === 'draft' ? '—' : inv.name}</dd></div>
               <div><dt className="inline text-label-3">Date </dt><dd className="inline">{date(inv.date)}</dd></div>
               <div><dt className="inline text-label-3">Due </dt><dd className="inline">{date(inv.invoice_date_due)}</dd></div>
               {inv.sale_order && <div><dt className="inline text-label-3">Order </dt><dd className="inline"><Link className="text-blue" to={`/sales/${inv.sale_order}`}>{inv.sale_order_name}</Link></dd></div>}
+              {inv.purchase_order && <div><dt className="inline text-label-3">Order </dt><dd className="inline"><Link className="text-blue" to={`/purchases/${inv.purchase_order}`}>{inv.purchase_order_name}</Link></dd></div>}
             </dl>
           </div>
           <table className="mt-4 w-full text-[14px]">
@@ -77,7 +90,7 @@ export default function InvoiceDetail() {
                   <td className="py-2.5">{l.name}</td>
                   <td className="py-2.5 text-right tnum">{qty(l.quantity)}</td>
                   <td className="py-2.5 text-right tnum">{money(l.price_unit)}</td>
-                  <td className="py-2.5 text-right tnum">{money(l.credit)}</td>
+                  <td className="py-2.5 text-right tnum">{money(bill ? l.debit : l.credit)}</td>
                 </tr>
               ))}
             </tbody>
@@ -102,7 +115,7 @@ export default function InvoiceDetail() {
         <div className="space-y-4">
           <div>
             <h2 className="mb-2 text-[17px] font-semibold">Behind the scenes: the journal entry</h2>
-            <JournalEntry move={inv} explain={inv.state === 'draft' ? 'Draft: these lines are prepared but not in the books yet. Confirming posts them.' : 'Receivable is debited (customer owes us); Sales and VAT Payable are credited.'} />
+            <JournalEntry move={inv} explain={inv.state === 'draft' ? 'Draft: these lines are prepared but not in the books yet. Confirming posts them.' : bill ? 'Payable is credited (we owe the vendor). Stock Interim is cleared and the VAT we paid becomes reclaimable.' : 'Receivable is debited (customer owes us); Sales and VAT Payable are credited.'} />
           </div>
           {!!inv.payments?.length && (
             <Card title="Payments">

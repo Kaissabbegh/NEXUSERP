@@ -60,7 +60,7 @@ class ProductViewSet(viewsets.ModelViewSet):
     serializer_class = ProductSerializer
 
     def get_queryset(self):
-        qs = Product.objects.select_related("category", "uom", "sale_tax")
+        qs = Product.objects.select_related("category", "uom", "sale_tax", "vendor")
         if t := self.request.query_params.get("type"):
             qs = qs.filter(product_type=t)
         if search := self.request.query_params.get("search"):

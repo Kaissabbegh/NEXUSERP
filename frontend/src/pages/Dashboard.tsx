@@ -1,5 +1,6 @@
 import { motion } from 'framer-motion'
-import { AlertTriangle, ArrowRight, ChevronRight, FileText, Plus, ReceiptText, ShoppingBag, Truck } from 'lucide-react'
+import { AlertTriangle, ArrowRight, ChevronRight, FileText, Landmark, PackageCheck, Plus, ReceiptText, ShoppingBag, ShoppingCart, Truck, type LucideIcon } from 'lucide-react'
+import type { ReactNode } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { Button, Card, ErrorBox, PageHeader, Pill, Spinner } from '../components/ui'
 import { useAuth } from '../lib/auth'
@@ -17,16 +18,41 @@ function Kpi({ label, value, hint, tone, i }: { label: string; value: string; hi
   )
 }
 
+type Stage = { label: string; count: number | string; icon: LucideIcon; to: string; color: string }
+
+function Pipeline({ title, stages, extra }: { title: string; stages: Stage[]; extra?: ReactNode }) {
+  return (
+    <Card className="mt-4" title={title} action={extra}>
+      <div className="grid grid-cols-2 gap-2 md:flex md:items-center">
+        {stages.map((p, i) => (
+          <div key={p.label} className="contents md:flex md:flex-1 md:items-center md:gap-2">
+            <Link to={p.to} className="flex flex-1 items-center gap-3 rounded-xl bg-surface-2 p-3 transition hover:bg-surface-3">
+              <span className={`grid size-9 place-items-center rounded-full ${p.color}`}>
+                <p.icon className="size-4" />
+              </span>
+              <span>
+                <span className="block text-[18px] font-semibold tnum">{p.count}</span>
+                <span className="block text-[12px] text-label-2">{p.label}</span>
+              </span>
+            </Link>
+            {i < stages.length - 1 && <ArrowRight className="hidden size-4 shrink-0 text-label-3 md:block" />}
+          </div>
+        ))}
+      </div>
+    </Card>
+  )
+}
+
 function RevenueChart({ data }: { data: D['monthly_revenue'] }) {
   const max = Math.max(1, ...data.map((d) => num(d.revenue)))
   return (
-    <div className="flex h-48 items-end gap-3">
+    <div className="flex h-48 items-end gap-1.5 sm:gap-3">
       {data.map((d, i) => {
         const h = (num(d.revenue) / max) * 100
         const label = new Date(`${d.month}-01T00:00:00`).toLocaleDateString('en-US', { month: 'short' })
         return (
-          <div key={d.month} className="group flex h-full flex-1 flex-col items-center gap-2">
-            <span className="text-[12px] font-medium text-label-2 opacity-0 transition group-hover:opacity-100 tnum">{moneyCompact(d.revenue)}</span>
+          <div key={d.month} className="group flex h-full min-w-0 flex-1 flex-col items-center gap-2">
+            <span className="hidden text-[12px] font-medium text-label-2 opacity-0 transition group-hover:opacity-100 sm:block tnum">{moneyCompact(d.revenue)}</span>
             <div className="relative w-full max-w-12 flex-1">
               <motion.div
                 initial={{ height: 0 }}
@@ -53,11 +79,17 @@ export default function Dashboard() {
   if (!data) return null
   const k = data.kpis
 
-  const pipeline = [
+  const o2c: Stage[] = [
     { label: 'Quotations', count: k.quotations, icon: FileText, to: '/sales?state=draft', color: 'text-blue bg-blue/15' },
-    { label: 'To deliver', count: k.to_deliver, icon: Truck, to: '/transfers', color: 'text-orange bg-orange/15' },
+    { label: 'To deliver', count: k.to_deliver, icon: Truck, to: '/transfers?kind=outgoing', color: 'text-orange bg-orange/15' },
     { label: 'To invoice', count: k.to_invoice, icon: ShoppingBag, to: '/sales?state=sale', color: 'text-yellow bg-yellow/15' },
-    { label: 'Awaiting payment', count: money(k.receivable), icon: ReceiptText, to: '/invoices', color: 'text-green bg-green/15' },
+    { label: 'They owe us', count: money(k.receivable), icon: ReceiptText, to: '/reports/aged?kind=receivable', color: 'text-green bg-green/15' },
+  ]
+  const p2p: Stage[] = [
+    { label: 'RFQs', count: k.rfqs, icon: FileText, to: '/purchases?state=draft', color: 'text-blue bg-blue/15' },
+    { label: 'To receive', count: k.to_receive, icon: PackageCheck, to: '/transfers?kind=incoming', color: 'text-teal bg-teal/15' },
+    { label: 'To bill', count: k.to_bill, icon: ShoppingCart, to: '/purchases?state=purchase', color: 'text-yellow bg-yellow/15' },
+    { label: 'We owe vendors', count: money(k.payable), icon: Landmark, to: '/reports/aged?kind=payable', color: 'text-orange bg-orange/15' },
   ]
 
   return (
@@ -65,35 +97,24 @@ export default function Dashboard() {
       <PageHeader
         title={`Good ${new Date().getHours() < 12 ? 'morning' : new Date().getHours() < 18 ? 'afternoon' : 'evening'}, ${user?.first_name || user?.username}`}
         subtitle="Here's how Nexus Furniture is doing."
-        actions={<Button icon={<Plus className="size-4" />} onClick={() => navigate('/sales/new')}>New Quotation</Button>}
+        actions={
+          <>
+            <Button variant="secondary" icon={<Plus className="size-4" />} onClick={() => navigate('/purchases/new')}>New RFQ</Button>
+            <Button icon={<Plus className="size-4" />} onClick={() => navigate('/sales/new')}>New Quotation</Button>
+          </>
+        }
       />
 
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <Kpi i={0} label="Revenue this month" value={money(k.revenue_month)} hint="Posted invoices, excl. tax" tone="text-label" />
-        <Kpi i={1} label="Receivables" value={money(k.receivable)} hint="Customers owe us" tone="text-blue" />
-        <Kpi i={2} label="Overdue" value={money(k.overdue)} hint="Past due date" tone={num(k.overdue) ? 'text-red' : 'text-label'} />
+        <Kpi i={1} label="Customers owe us" value={money(k.receivable)} hint={num(k.overdue) ? `${money(k.overdue)} overdue` : 'Nothing overdue'} tone="text-green" />
+        <Kpi i={2} label="We owe vendors" value={money(k.payable)} hint="Posted bills not yet paid" tone="text-orange" />
         <Kpi i={3} label="Stock value" value={money(k.stock_value)} hint="On hand × cost" tone="text-teal" />
       </div>
 
-      <Card className="mt-4" title="Order-to-Cash pipeline">
-        <div className="grid grid-cols-2 gap-2 md:flex md:items-center">
-          {pipeline.map((p, i) => (
-            <div key={p.label} className="contents md:flex md:flex-1 md:items-center md:gap-2">
-              <Link to={p.to} className="flex flex-1 items-center gap-3 rounded-xl bg-surface-2 p-3 transition hover:bg-surface-3">
-                <span className={`grid size-9 place-items-center rounded-full ${p.color}`}>
-                  <p.icon className="size-4" />
-                </span>
-                <span>
-                  <span className="block text-[18px] font-semibold tnum">{p.count}</span>
-                  <span className="block text-[12px] text-label-2">{p.label}</span>
-                </span>
-              </Link>
-              {i < pipeline.length - 1 && <ArrowRight className="hidden size-4 shrink-0 text-label-3 md:block" />}
-            </div>
-          ))}
-        </div>
-      </Card>
-
+      <Pipeline title="Selling · Order-to-Cash" stages={o2c} />
+      <Pipeline title="Buying · Procure-to-Pay" stages={p2p}
+        extra={k.to_produce ? <Link to="/manufacturing" className="text-[13px] text-purple">{k.to_produce} manufacturing order{k.to_produce > 1 ? 's' : ''} to produce →</Link> : undefined} />
       <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-3">
         <Card className="lg:col-span-2" title="Revenue by month">
           {data.monthly_revenue.length ? <RevenueChart data={data.monthly_revenue} /> : <p className="text-label-2">No posted invoices yet.</p>}

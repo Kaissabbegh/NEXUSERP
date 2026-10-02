@@ -22,6 +22,7 @@ class Location(models.Model):
         CUSTOMER = "customer", "Customer"
         SUPPLIER = "supplier", "Vendor"
         INVENTORY = "inventory", "Inventory Adjustment"
+        PRODUCTION = "production", "Production"
 
     name = models.CharField(max_length=64)
     usage = models.CharField(max_length=16, choices=Usage.choices)
@@ -59,6 +60,11 @@ class Picking(models.Model):
     partner = models.ForeignKey("masterdata.Partner", null=True, blank=True, on_delete=models.PROTECT, related_name="pickings")
     origin = models.CharField(max_length=64, blank=True, help_text="Source document, e.g. S00004.")
     sale_order = models.ForeignKey("sales.SaleOrder", null=True, blank=True, on_delete=models.PROTECT, related_name="pickings")
+    purchase_order = models.ForeignKey("purchase.PurchaseOrder", null=True, blank=True, on_delete=models.PROTECT, related_name="pickings")
+    counterpart_account = models.ForeignKey(
+        "accounting.Account", null=True, blank=True, on_delete=models.PROTECT, related_name="+",
+        help_text="Overrides the account balancing the stock valuation entry (e.g. equity for opening stock).",
+    )
     source_location = models.ForeignKey(Location, on_delete=models.PROTECT, related_name="+")
     dest_location = models.ForeignKey(Location, on_delete=models.PROTECT, related_name="+")
     scheduled_date = models.DateField(default=timezone.localdate)
@@ -73,9 +79,11 @@ class Picking(models.Model):
 
 
 class StockMove(models.Model):
-    picking = models.ForeignKey(Picking, on_delete=models.CASCADE, related_name="moves")
+    picking = models.ForeignKey(Picking, null=True, blank=True, on_delete=models.CASCADE, related_name="moves")
+    production = models.ForeignKey("mrp.ManufacturingOrder", null=True, blank=True, on_delete=models.CASCADE, related_name="moves")
     product = models.ForeignKey("masterdata.Product", on_delete=models.PROTECT, related_name="stock_moves")
     sale_line = models.ForeignKey("sales.SaleOrderLine", null=True, blank=True, on_delete=models.SET_NULL, related_name="stock_moves")
+    purchase_line = models.ForeignKey("purchase.PurchaseOrderLine", null=True, blank=True, on_delete=models.SET_NULL, related_name="stock_moves")
     quantity = models.DecimalField(max_digits=12, decimal_places=3)
     source_location = models.ForeignKey(Location, on_delete=models.PROTECT, related_name="moves_out")
     dest_location = models.ForeignKey(Location, on_delete=models.PROTECT, related_name="moves_in")

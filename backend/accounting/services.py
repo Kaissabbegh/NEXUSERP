@@ -74,28 +74,35 @@ def due_date(invoice_date: Date, partner) -> Date:
 
 
 @transaction.atomic
-def register_payment(invoice: Move, amount: Decimal | None = None, journal_code: str = "BNK") -> Payment:
-    if invoice.move_type != Move.MoveType.OUT_INVOICE or invoice.state != Move.State.POSTED:
-        raise ValidationError("Only posted customer invoices can be paid.")
+def register_payment(invoice: Move, amount: Decimal | None = None, journal_code: str = "BNK", date: Date | None = None) -> Payment:
+    """Customer invoice: money comes in (Dr Bank / Cr Receivable).
+    Vendor bill: money goes out (Dr Payable / Cr Bank)."""
+    if not invoice.is_invoice or invoice.state != Move.State.POSTED:
+        raise ValidationError("Only posted invoices and bills can be paid.")
     if invoice.amount_residual <= 0:
-        raise ValidationError("This invoice is already fully paid.")
+        raise ValidationError(f"{invoice.name} is already fully paid.")
     amount = Decimal(amount) if amount is not None else invoice.amount_residual
     if amount <= 0 or amount > invoice.amount_residual:
         raise ValidationError(f"Amount must be between 0 and {invoice.amount_residual}.")
 
     bank = journal(journal_code)
     partner = invoice.partner
-    payment = Payment.objects.create(partner=partner, journal=bank, invoice=invoice, amount=amount)
-    payment.move = create_entry(
-        journal_code,
-        [
-            LineSpec(bank.default_account, debit=amount, name=f"Payment for {invoice.name}",
-                     kind=MoveLine.Kind.LIQUIDITY, partner=partner),
-            LineSpec(partner.receivable_account, credit=amount, name=f"Payment for {invoice.name}",
-                     kind=MoveLine.Kind.RECEIVABLE, partner=partner),
-        ],
-        ref=invoice.name,
+    inbound = invoice.move_type == Move.MoveType.OUT_INVOICE
+    label = f"Payment {'from' if inbound else 'to'} {partner.name} for {invoice.name}"
+    liquidity = LineSpec(bank.default_account, name=label, kind=MoveLine.Kind.LIQUIDITY, partner=partner)
+    if inbound:
+        liquidity.debit = amount
+        counterpart = LineSpec(partner.receivable_account, credit=amount, name=label, kind=MoveLine.Kind.RECEIVABLE, partner=partner)
+    else:
+        liquidity.credit = amount
+        counterpart = LineSpec(partner.payable_account, debit=amount, name=label, kind=MoveLine.Kind.PAYABLE, partner=partner)
+
+    payment = Payment.objects.create(
+        partner=partner, journal=bank, invoice=invoice, amount=amount, date=date or today(),
+        payment_type=Payment.Type.INBOUND if inbound else Payment.Type.OUTBOUND,
     )
+    payment.move = create_entry(journal_code, [counterpart, liquidity] if not inbound else [liquidity, counterpart],
+                                ref=invoice.name, date=payment.date)
     payment.name = payment.move.name
     payment.state = Payment.State.POSTED
     payment.save()
