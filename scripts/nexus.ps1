@@ -68,6 +68,11 @@ Write-Host ''
 Write-Host '  NexusERP  -  the ERP you learn by using' -ForegroundColor Magenta
 Write-Host "  $Root" -ForegroundColor DarkGray
 
+# Python packages contain deep file paths; Windows refuses paths over 260 characters unless long paths are enabled.
+$longPaths = (Get-ItemProperty 'HKLM:\SYSTEM\CurrentControlSet\Control\FileSystem' -ErrorAction SilentlyContinue).LongPathsEnabled
+if ($Root.Length -gt 90 -and $longPaths -ne 1) {
+    Fail "The folder path is too long ($($Root.Length) characters) and Windows may refuse to install. Move the NexusERP folder somewhere shorter (for example directly under C:) and run NexusERP.bat again."
+}
 # ---------------------------------------------------------------------------------------------
 Step 'Checking Python'
 $Python = $null
@@ -135,8 +140,15 @@ if (-not (Test-Path (Join-Path $PgData 'PG_VERSION'))) {
 & (Join-Path $PgBin 'pg_isready.exe') -h localhost -p $DbPort | Out-Null
 if ($LASTEXITCODE -ne 0) {
     Say "Starting PostgreSQL on port $DbPort..."
-    & (Join-Path $PgBin 'pg_ctl.exe') -D $PgData -l (Join-Path $DataHome 'pg.log') -o "-p $DbPort" -w start | Out-Null
-    if ($LASTEXITCODE -ne 0) { Fail "PostgreSQL did not start. Look at $DataHome\pg.log" }
+    # Started without inheriting this window's output handles, otherwise the server would keep them open.
+    $psi = New-Object Diagnostics.ProcessStartInfo
+    $psi.FileName = Join-Path $PgBin 'pg_ctl.exe'
+    $psi.Arguments = "-D `"$PgData`" -l `"$(Join-Path $DataHome 'pg.log')`" -o `"-p $DbPort`" -w start"
+    $psi.UseShellExecute = $false
+    $psi.CreateNoWindow = $true
+    $proc = [Diagnostics.Process]::Start($psi)
+    $proc.WaitForExit()
+    if ($proc.ExitCode -ne 0) { Fail "PostgreSQL did not start. Look at $DataHome\pg.log" }
 }
 Say "PostgreSQL is running on port $DbPort" 'Green'
 

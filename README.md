@@ -246,6 +246,7 @@ cd backend
 | Problem | Fix |
 |---|---|
 | **“An Application Control policy has blocked this file”** | Windows *Smart App Control* blocks some developer tools. Turn it off in *Windows Security → App & browser control → Smart App Control*, or use the Docker option. |
+| “The folder path is too long” / pip *No such file or directory* | Windows limits paths to 260 characters. Move the folder somewhere short, e.g. `C:\NexusERP`, and run `NexusERP.bat` again. |
 | `winget` not found | Install *App Installer* from the Microsoft Store, or install Python, Node.js and PostgreSQL manually, then rerun `NexusERP.bat`. |
 | “Python/Node was installed but is not on PATH yet” | Close the window and run `NexusERP.bat` again. |
 | Port 8000 already in use | Run `NexusERP.bat -Port 8080` and open http://localhost:8080. |
